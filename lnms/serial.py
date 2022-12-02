@@ -41,16 +41,19 @@ lnms = LibreNMSAPI(
 
 # GET device list from Librenms
 def get_data_list():
-    response = []
-    host = []
-    ip = []
-    for i in lnms.devices.all():
-        host = (getattr(i, 'sysName'))
-        ip = (getattr(i, 'hostname'))
-        vendor = (getattr(i, 'icon'))
-        serial = (getattr(i, 'serial'))
-        response.append((host ,ip, vendor, serial))
-    return response
+    try:
+        devices = lnms.devices.all()
+        response = []
+        host = []
+        ip = []
+        for i in devices:
+            host = (getattr(i, 'sysName'))
+            ip = (getattr(i, 'hostname'))
+            response.append((host ,ip))
+        return response
+    except Exception as LibreNMSStatusNotOKException:
+        logging.exception(LibreNMSStatusNotOKException)
+        print(LibreNMSStatusNotOKException)
 
 
 lnms_devices = get_data_list()
