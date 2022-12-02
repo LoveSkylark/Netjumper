@@ -32,7 +32,6 @@ logging.basicConfig (
 )
 
 # Connect API
-
 lnms = LibreNMSAPI(
     access_token = lnms_token, 
     base_url= lnms_api+"/api/v0"
@@ -40,44 +39,39 @@ lnms = LibreNMSAPI(
 
 # GET device list from Librenms
 def get_data_list():
-    response = []
-    host = []
-    ip = []
-    for i in lnms.devices.all():
-        host = (getattr(i, 'sysName'))
-        ip = (getattr(i, 'hostname'))
-        response.append((host ,ip))
-    return response
+    try:
+        devices = lnms.devices.all()
+        response = []
+        host = []
+        ip = []
+        for i in devices:
+            host = (getattr(i, 'sysName'))
+            ip = (getattr(i, 'hostname'))
+            response.append((host ,ip))
+        return response
+    except Exception as LibreNMSStatusNotOKException:
+        logging.exception(LibreNMSStatusNotOKException)
+        print(LibreNMSStatusNotOKException)
 
 # ADD device list to hosts
 def add_devices_to_hosts(data, path=hosts_dir):
-    hosts = Hosts(path=path)
-    for i in data:
-        new_entry = HostsEntry(entry_type='ipv4', address=i[1], names=[i[0]])
-        hosts.add([new_entry])
-        hosts.write()
-    return
-
-# ADD device list to autocomplete
-def create_autocomplete_list(data):
-    device_list = []
-    for i in data:
-        device_list.append(i[0])
-    return (' '.join(device_list))
-
-# REMOVE host by IP
-def remove_ip_from_hosts(ip, path=hosts_dir):
-    host = Hosts(path=path)
-    host.remove_all_matching(address=ip)
-
-# REMOVE host by name
-def remove_ip_from_hosts(name, path=hosts_dir):
-    host = Hosts(path=path)
-    host.remove_all_matching(name=name)
+    try:
+        hosts = Hosts(path=path)
+        for i in data:
+            new_entry = HostsEntry(entry_type='ipv4', address=i[1], names=[i[0]])
+            hosts.add([new_entry])
+            hosts.write()
+        return
+    except:
+         logging.exception(f'error')
 
 
+logging.info(f'Gathering LibreNMS device list')
 lnms_devices = get_data_list()
 
+logging.info(f'Adding device list to /etc/hosts')
 add_devices_to_hosts(lnms_devices)
-add_devices_to_hosts(lnms_devices, 'hosts.new')
+
+logging.info(f'Adding device list to "hosts.list"')
+add_devices_to_hosts(lnms_devices, 'hosts.list')
 
