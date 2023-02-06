@@ -1,5 +1,11 @@
 #!/usr/bin/python
 
+##
+# update_hosts.php
+#
+# API LibreNMS Script to retrive the serials for all devices.
+##
+
 import json
 import csv
 import certifi
@@ -58,10 +64,9 @@ def get_data_list():
 
 lnms_devices = get_data_list()
 
- 
 # opening the csv file in 'w+' mode
 file = open('serial.csv', 'w+', newline ='')
- 
+
 # writing the data into the file
 with file:   
     write = csv.writer(file)
