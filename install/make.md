@@ -16,5 +16,6 @@ sudo apt install pip
 sudo pip install certifi
 sudo pip install python-hosts
 sudo pip install graphviz
+sudo pip install dotenv
 
 # copy profile.d to right place....
