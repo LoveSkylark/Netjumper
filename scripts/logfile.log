@@ -1,0 +1,14 @@
+Error retrieving device list: API Function 'get_devices' does not exist
+Traceback (most recent call last):
+  File "/mnt/c/data/git/LoveSkylark/Sensa-Netjumper/scripts/./test.py", line 18, in connect
+    self.devices = client.get_devices()
+  File "/mnt/c/data/git/LoveSkylark/Sensa-Netjumper/scripts/Libs/LibreNMSAPIClient/LibreNMSAPIClient.py", line 739, in __getattr__
+    raise LibreNMSAPIClientException("API Function '%s' does not exist" % function_name)
+Libs.LibreNMSAPIClient.LibreNMSAPIClient.LibreNMSAPIClientException: API Function 'get_devices' does not exist
+Error retrieving device list: API Function 'get_devices' does not exist
+Traceback (most recent call last):
+  File "/mnt/c/data/git/LoveSkylark/Sensa-Netjumper/scripts/./test.py", line 18, in connect
+    self.devices = client.get_devices()
+  File "/mnt/c/data/git/LoveSkylark/Sensa-Netjumper/scripts/Libs/LibreNMSAPIClient/LibreNMSAPIClient.py", line 739, in __getattr__
+    raise LibreNMSAPIClientException("API Function '%s' does not exist" % function_name)
+Libs.LibreNMSAPIClient.LibreNMSAPIClient.LibreNMSAPIClientException: API Function 'get_devices' does not exist

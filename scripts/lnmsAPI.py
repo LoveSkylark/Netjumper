@@ -3,6 +3,7 @@ import requests
 import json
 
 
+
 class LibreNMSInvalidEndpointException(Exception):
     def __init__(self, message):
         super(LibreNMSInvalidEndpointException, self).__init__(message)

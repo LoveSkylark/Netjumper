@@ -1,5 +1,12 @@
 #!/usr/bin/python
 
+##
+# update_hosts.php
+#
+# API LibreNMS Script to retrive device and add them to the host file
+##
+
+
 import json
 import certifi
 import logging
@@ -63,7 +70,7 @@ def add_devices_to_hosts(data, path=hosts_dir):
             hosts.write()
         return
     except:
-         logging.exception(f'error')
+        logging.exception(f'error')
 
 
 logging.info(f'Gathering LibreNMS device list')
