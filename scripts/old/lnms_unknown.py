@@ -24,14 +24,14 @@ ports = lnms.get_all_ports()
 log_dir = os.environ['log_dir']
 if not os.path.exists(log_dir): 
     os.makedirs(log_dir)
+log_file = log_dir + "librenms_config_downloader.log"
 
 def get_argument(index):
     if len(sys.argv) > index:
         return sys.argv[index]
     else:
         return None
-
-log_file = log_dir + "librenms_config_downloader.log"
+    
 
 logging.basicConfig (
     level = logging.INFO,

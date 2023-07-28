@@ -293,3 +293,63 @@
 2023-03-06 10:29:03:INFO - device added to list: sensa-libre-02
 2023-03-06 10:29:03:WARNING - Unable to get serialnumber from sensa-libre-02
 2023-03-06 10:29:03:INFO - device added to list: dc2-ytri-access-01
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-ipn03
+2023-07-27 21:25:38:INFO - device added to list: vgw-shared-sensa-02
+2023-07-27 21:25:38:INFO - device added to list: dc2-ytri-access-02
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-spine1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-h1-spine1
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-spine2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-h1-spine2
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-leaf1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-h1-leaf1
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-leaf2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-h1-leaf2
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-leaf3
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-h1-leaf3
+2023-07-27 21:25:38:INFO - device added to list: dc2-spine1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-spine1
+2023-07-27 21:25:38:INFO - device added to list: dc2-spine2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-spine2
+2023-07-27 21:25:38:INFO - device added to list: dc2-leaf1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-leaf1
+2023-07-27 21:25:38:INFO - device added to list: dc2-leaf2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-leaf2
+2023-07-27 21:25:38:INFO - device added to list: dc2-leaf3
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-leaf3
+2023-07-27 21:25:38:INFO - device added to list: dc2-leaf4
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-leaf4
+2023-07-27 21:25:38:INFO - device added to list: dc2-leaf5
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from dc2-leaf5
+2023-07-27 21:25:38:INFO - device added to list: dc2-sensa-wan03
+2023-07-27 21:25:38:INFO - device added to list: dc2-c9k-dist02
+2023-07-27 21:25:38:INFO - device added to list: dc2-pa3220-fw1
+2023-07-27 21:25:38:INFO - device added to list: dc2-ytri-access-03
+2023-07-27 21:25:38:INFO - device added to list: dc2-ytri-01
+2023-07-27 21:25:38:INFO - device added to list: dc2-ytri-02
+2023-07-27 21:25:38:INFO - device added to list: dc2-h1-ipn04
+2023-07-27 21:25:38:INFO - device added to list: na-sg-vrn-adm01
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from na-sg-vrn-adm01
+2023-07-27 21:25:38:INFO - device added to list: dc1-ytri-01
+2023-07-27 21:25:38:INFO - device added to list: dc1-ytri-02
+2023-07-27 21:25:38:INFO - device added to list: s32-leaf1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from s32-leaf1
+2023-07-27 21:25:38:INFO - device added to list: s32-leaf2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from s32-leaf2
+2023-07-27 21:25:38:INFO - device added to list: s32-spine2
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from s32-spine2
+2023-07-27 21:25:38:INFO - device added to list: s32-spine1
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from s32-spine1
+2023-07-27 21:25:38:INFO - device added to list: s32-leaf3
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from s32-leaf3
+2023-07-27 21:25:38:INFO - device added to list: vgw-shared-sensa-01
+2023-07-27 21:25:38:INFO - device added to list: dc1-pa3220-fw1
+2023-07-27 21:25:38:INFO - device added to list: dc1-ytri-access-01
+2023-07-27 21:25:38:INFO - device added to list: dc1-ytri-access-02
+2023-07-27 21:25:38:INFO - device added to list: dc1-ytri-access-03
+2023-07-27 21:25:38:INFO - device added to list: dc1-c9k-dist01
+2023-07-27 21:25:38:INFO - device added to list: sensa-s32-ipn02
+2023-07-27 21:25:38:INFO - device added to list: sensa-ipn01
+2023-07-27 21:25:38:INFO - device added to list: s32-sensa-wan01
+2023-07-27 21:25:38:INFO - device added to list: sensa-libre-02
+2023-07-27 21:25:38:WARNING - Unable to get serialnumber from sensa-libre-02
+2023-07-27 21:25:38:INFO - device added to list: dc2-ytri-access-01

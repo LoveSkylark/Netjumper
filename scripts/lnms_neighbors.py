@@ -47,13 +47,6 @@ def get_sorted_port_list(hostname):
     reply.sort(key=lambda x: x[0].lower() if x[0] else '')
     return reply
 
-def print_help():
-    if not args.hostname:
-        print()
-        print("Add hostname to narrow list")
-        print("Examples:")
-        print("     ./lnms_unknown 'partial-or-full-hostname'")
-
 def print_unknown_neighbors():
     # Get the list of unknown neighbors
     neighbours = get_unknown_neighbors(devices, links)
@@ -66,6 +59,13 @@ def print_unknown_neighbors():
             print(neighbour)
             for device_name, port_name in get_sorted_port_list(neighbour):
                 print(f"                  > {device_name} ({port_name})")
+
+def print_help():
+    if not args.hostname:
+        print()
+        print("Add hostname to narrow list")
+        print("Examples:")
+        print("     ./lnms_unknown 'partial-or-full-hostname'")
 
 print_unknown_neighbors()
 print_help()
