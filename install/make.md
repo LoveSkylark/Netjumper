@@ -18,5 +18,6 @@ sudo pip install certifi
 sudo pip install python-hosts
 sudo pip install graphviz
 sudo pip install dotenv
+sudo pip install dictdiffer
 
 # copy profile.d to right place....
