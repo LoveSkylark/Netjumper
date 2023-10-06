@@ -1,40 +1,79 @@
 #!/usr/bin/python
+
+#  LibreNMS Neighbor Discovery Script
+#  
+#  @author Skylark (github.com/LoveSkylark)
+#  @license GPL
+
 import os
+import sys
 import logging.handlers
 import argparse
+from dotenv import load_dotenv
 from Libs.LibreNMSAPIClient.LibreNMSAPIClient import LibreNMSAPIClient
 
-lnms = LibreNMSAPIClient()
-devices = lnms.list_devices()
-links = lnms.list_links()
-ports = lnms.get_all_ports()
+def setup_logging(log_file):
 
-### Logger
-log_dir = os.environ.get('log_dir', '/var/log/')
-os.makedirs(log_dir, exist_ok=True)
+    log_dir = os.path.join('..', os.environ.get('log_dir', 'var/log/'))
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, log_file)
 
-log_file = os.path.join(log_dir, 'librenms_device_inventory.log')
-
-logging.basicConfig(
-level=logging.INFO,
-format='%(asctime)s:%(levelname)s - %(message)s',
-datefmt='%Y-%m-%d %H:%M:%S',
-handlers=[
-    logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=5*1024*1024,
-        backupCount=10
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s:%(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.handlers.RotatingFileHandler(
+                log_file,
+                maxBytes=5*1024*1024,
+                backupCount=10
+            )
+        ]
     )
-]
-)
 
-### Parser
-parser = argparse.ArgumentParser(description="Script to download LibreNMS configuration")
-parser.add_argument("hostname", nargs="?", help="Hostname to filter on")
-args = parser.parse_args()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Script to download LibreNMS configuration")
+    parser.add_argument("hostname", nargs="?", help="Hostname to filter on")
+    return parser.parse_args()
 
+def print_help(args):
+    if not args.hostname:
+        print()
+        print("Add hostname to narrow list")
+        print("Examples:")
+        print("     ./lnms_neighbors.py 'partial-or-full-hostname'")
 
-def get_unknown_neighbors(devices, links):
+# -------
+
+def get_api_data(lnms):
+    try:
+        devices = lnms.list_devices()
+        links = lnms.list_links()
+        ports = lnms.get_all_ports()
+    except Exception as e:
+        logging.error(f"Error calling API: {e}")
+        sys.exit(1)
+    
+    logging.info("API call succeeded")
+    return devices, links, ports
+
+def list_unknown_neighbors(args, devices, links, ports):
+    neighbours = find_unknown_neighbors(devices, links)
+    # Get the list of unknown neighbors
+    for neighbour in neighbours:
+        logging.info(f"Neighbour {neighbour} discovered")
+
+        # If no hostname argument is given, print all unknown neighbors
+        if not args.hostname:
+            print(neighbour)
+                
+        # If a hostname argument is given, print matching neighbors and their port information
+        elif neighbour.startswith(args.hostname):
+            print(neighbour)
+            for device_name, port_name in get_sorted_port_list(args.hostname, devices, links, ports):
+                print(f"  -> {device_name} ({port_name})")
+
+def find_unknown_neighbors(devices, links):
 
     # Create a set of all local and remote device short names in lowercase
     local_match = set(i['sysName'].lower().split('.', 1)[0] for i in devices if isinstance(i, dict))
@@ -45,7 +84,7 @@ def get_unknown_neighbors(devices, links):
     
     return reply
 
-def get_sorted_port_list(hostname):
+def get_sorted_port_list(hostname, devices, links, ports):
 
     reply = []
     
@@ -65,28 +104,32 @@ def get_sorted_port_list(hostname):
     reply.sort(key=lambda x: x[0].lower() if x[0] else '')
     return reply
 
-def print_unknown_neighbors():
+def main():
+
+    # Load environment variables
+    load_dotenv()
+
+    # Setup logging
+    log_file = "lnms_neighbors.log"
+    setup_logging(log_file)
+
+    # Parse command line arguments
+    args = parse_args()
+
+    # Create API client
+    lnms = LibreNMSAPIClient()
+
+    # Get data from API
+    devices, links, ports = get_api_data(lnms)
+
     
-    # Get the list of unknown neighbors
-    neighbours = get_unknown_neighbors(devices, links)
-    for neighbour in neighbours:
-        logging.info(f"Neighbour {neighbour} discovered")
-        # If no hostname argument is given, print all unknown neighbors
-        if not args.hostname:
-            print(neighbour)
-                
-        # If a hostname argument is given, print matching neighbors and their port information
-        elif neighbour.startswith(args.hostname):
-            print(neighbour)
-            for device_name, port_name in get_sorted_port_list(neighbour):
-                print(f"  -> {device_name} ({port_name})")
+    # Print results
+    list_unknown_neighbors(args, devices, links, ports)
 
-def print_help():
-    if not args.hostname:
-        print()
-        print("Add hostname to narrow list")
-        print("Examples:")
-        print("     ./lnms_unknown 'partial-or-full-hostname'")
+    # Print help text
+    print_help(args)
 
-print_unknown_neighbors()
-print_help()
+
+
+if __name__ == "__main__":
+    main()
