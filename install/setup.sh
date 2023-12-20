@@ -15,7 +15,7 @@ sudo pip install certifi python-hosts graphviz dotenv
 
 
 mkdir -p /data/scripts
-sudo git clone https://github.com/LoveSkylark/Sensa-Netjumper.git /data/scripts/
+sudo git clone https://github.com/LoveSkylark/Netjumper.git /data/scripts/
 
 mkdir -p /data/scripts/Libs
 sudo git clone https://github.com/electrocret/LibreNMSAPIClient.git /data/scripts/Libs
