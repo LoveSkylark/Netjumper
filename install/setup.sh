@@ -17,8 +17,8 @@ sudo pip install certifi python-hosts graphviz dotenv
 mkdir -p /data/scripts
 sudo git clone https://github.com/LoveSkylark/Netjumper.git /data/scripts/
 
-mkdir -p /data/scripts/Libs
-sudo git clone https://github.com/electrocret/LibreNMSAPIClient.git /data/scripts/Libs
+mkdir -p /data/scripts/Libs/LibreNMSAPIClient
+sudo git clone https://github.com/electrocret/LibreNMSAPIClient.git /data/scripts/Libs/LibreNMSAPIClient
 #
 # from Libs.LibreNMSAPIClient.LibreNMSAPIClient import LibreNMSAPIClient
 #
