@@ -14,6 +14,7 @@
 #  @license GPL
 
 import os
+import re
 import sys
 import logging
 import logging.handlers
@@ -149,9 +150,9 @@ def cmd_neighbors(args, api: Client):
         logging.info(f"Neighbour {neighbour} discovered")
         if not args.hostname:
             print(neighbour)
-        elif neighbour.startswith(args.hostname):
+        elif re.search(args.hostname, neighbour, re.IGNORECASE):
             print(neighbour)
-            for device_name, port_name in get_sorted_port_list(args.hostname, devices, links, ports):
+            for device_name, port_name in get_sorted_port_list(neighbour, devices, links, ports):
                 print(f"  -> {device_name} ({port_name})")
 
     if not args.hostname:
