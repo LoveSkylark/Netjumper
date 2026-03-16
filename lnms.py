@@ -126,6 +126,7 @@ def _print_bill_ports(bill_id: int, api: Client, devices: list) -> None:
         ifname      = port.get('ifName', 'unknown')
         try:
             detail   = api.get_port(port['port_id'])
+            import json; print(json.dumps(detail, indent=2))
             rate_in  = format_mbps(detail.get('ifInOctets_rate', 0) * 8)
             rate_out = format_mbps(detail.get('ifOutOctets_rate', 0) * 8)
         except Exception:
