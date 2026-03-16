@@ -73,7 +73,9 @@ class Client:
         return self._get(f'/api/v0/bills/{bill_id}/history')['bill_history']
 
     def get_bill_ports(self, bill_id: int) -> list[dict]:
-        return self._get(f'/api/v0/bills/{bill_id}/ports', cache=False)['ports']
+        data = self._get(f'/api/v0/bills/{bill_id}', cache=False)
+        import json; print(json.dumps(data, indent=2))
+        return []
 
     # ------------------------------------------------------------------
     # Devices
