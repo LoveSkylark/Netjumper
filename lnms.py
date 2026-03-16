@@ -218,7 +218,7 @@ def cmd_firmware(args, api: Client):
 def cmd_api(_args, api: Client):
     try:
         data = api.ping()
-        info = data.get('system', {})
+        info = data.get('system', {}) if isinstance(data, dict) else {}
         version = info.get('local_ver', 'unknown')
         print(f"OK  API is reachable and token is valid (LibreNMS {version})")
     except APIError as e:

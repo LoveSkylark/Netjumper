@@ -34,7 +34,7 @@ class Client:
         if not resp.ok:
             raise APIError(f"HTTP {resp.status_code}: {resp.text}")
         data = resp.json()
-        if data.get('status') == 'error':
+        if isinstance(data, dict) and data.get('status') == 'error':
             raise APIError(f"API error: {data.get('message', resp.text)}")
         if cache:
             self._cache[path] = data
