@@ -225,7 +225,10 @@ def cmd_api(_args, api: Client):
         print(f"FAIL  {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"FAIL  Could not reach API: {e}")
+        if "timed out" in str(e).lower() or "timeout" in type(e).__name__.lower():
+            print(f"FAIL  Connection timed out: {api._url}")
+        else:
+            print(f"FAIL  Could not reach API: {e}")
         sys.exit(1)
 
 

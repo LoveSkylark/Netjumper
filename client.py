@@ -11,8 +11,9 @@ class APIError(Exception):
 class Client:
     """LibreNMS API client covering endpoints used by lnms.py and update_hosts.py."""
 
-    def __init__(self, url: str, token: str):
+    def __init__(self, url: str, token: str, timeout: int = 10):
         self._url = url.rstrip('/')
+        self._timeout = timeout
         self._cache: dict = {}
         self._session = requests.Session()
         self._session.verify = False
@@ -29,7 +30,7 @@ class Client:
     def _get(self, path: str, cache: bool = True) -> dict | list:
         if cache and path in self._cache:
             return self._cache[path]
-        resp = self._session.get(self._url + path)
+        resp = self._session.get(self._url + path, timeout=self._timeout)
         if not resp.ok:
             raise APIError(f"HTTP {resp.status_code}: {resp.text}")
         data = resp.json()
@@ -40,13 +41,13 @@ class Client:
         return data
 
     def _post(self, path: str, payload: dict) -> dict:
-        resp = self._session.post(self._url + path, json=payload)
+        resp = self._session.post(self._url + path, json=payload, timeout=self._timeout)
         if not resp.ok:
             raise APIError(f"HTTP {resp.status_code}: {resp.text}")
         return resp.json()
 
     def _patch(self, path: str, payload: dict) -> dict:
-        resp = self._session.patch(self._url + path, json=payload)
+        resp = self._session.patch(self._url + path, json=payload, timeout=self._timeout)
         if not resp.ok:
             raise APIError(f"HTTP {resp.status_code}: {resp.text}")
         return resp.json()
@@ -103,7 +104,7 @@ class Client:
 
     def list_oxidized(self) -> list[dict]:
         """Return the list of devices tracked by Oxidized."""
-        resp = self._session.get(self._url + '/api/v0/oxidized/')
+        resp = self._session.get(self._url + '/api/v0/oxidized/', timeout=self._timeout)
         if not resp.ok:
             return []
         data = resp.json()
@@ -112,7 +113,7 @@ class Client:
     def get_oxidized_config(self, hostname: str) -> str | None:
         """Return the stored Oxidized config for *hostname*, or None on any error."""
         try:
-            resp = self._session.get(self._url + f'/api/v0/oxidized/config/{hostname}')
+            resp = self._session.get(self._url + f'/api/v0/oxidized/config/{hostname}', timeout=self._timeout)
             if not resp.ok:
                 return None
             data = resp.json()
