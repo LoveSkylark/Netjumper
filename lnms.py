@@ -161,6 +161,8 @@ def cmd_inventory(args, api: Client):
         for device in devices:
             short_name = device['sysName'].split('.')[0]
             vendor = get_vendor(device.get('icon', ''))
+            if args.vendor and args.vendor.lower() != vendor.lower():
+                continue
             if device['serial']:
                 print(f"  {short_name}  S:{device['serial']}")
             else:
@@ -349,7 +351,8 @@ def build_parser():
     p_billing.add_argument("customer", nargs="?", help="Customer name (shows history when provided)")
     p_billing.add_argument("-p", dest="ports", action="store_true", help="Show ports and current rates")
 
-    sub.add_parser("inventory", help="List devices and write device-list.csv")
+    p_inventory = sub.add_parser("inventory", help="List devices and write device-list.csv")
+    p_inventory.add_argument("-v", dest="vendor", metavar="VENDOR", help="Filter by vendor name")
 
     p_neighbors = sub.add_parser("neighbors", help="Discover unknown LLDP/CDP neighbors")
     p_neighbors.add_argument("hostname", nargs="?", help="Regex filter on neighbor name")
