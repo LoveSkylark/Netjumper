@@ -8,6 +8,12 @@ def format_mbps(bps: float) -> str:
     return "{:.2f} Mbps".format(bps / 1_000_000)
 
 
+def get_vendor(icon: str) -> str:
+    if not icon:
+        return ''
+    return os.path.splitext(os.path.basename(icon))[0].capitalize()
+
+
 # ------------------------------------------------------------------
 # Neighbors
 # ------------------------------------------------------------------

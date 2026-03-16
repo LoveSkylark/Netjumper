@@ -32,6 +32,7 @@ from parsers import (
     group_by_hardware_version,
     save_firmware_files,
     print_firmware_list,
+    get_vendor,
 )
 
 
@@ -156,15 +157,16 @@ def cmd_inventory(args, api: Client):
     csv_path = os.path.join(output_dir, "device-list.csv")
     print("\nDevices with a serial number:")
     with open(csv_path, "w") as f:
-        f.write("NAME, IP, HARDWARE, VERSION, SERIAL\n")
+        f.write("NAME, IP, VENDOR, HARDWARE, VERSION, SERIAL\n")
         for device in devices:
             short_name = device['sysName'].split('.')[0]
+            vendor = get_vendor(device.get('icon', ''))
             if device['serial']:
                 print(f"  {short_name}  S:{device['serial']}")
             else:
                 logging.warning(f"Unable to get serial number from {short_name}")
             logging.info(f"device added to list: {short_name}")
-            f.write(f"{short_name}, {device['hostname']}, {device['hardware'] or ''}, {device['version'] or ''}, {device['serial'] or ''}\n")
+            f.write(f"{short_name}, {device['hostname']}, {vendor}, {device['hardware'] or ''}, {device['version'] or ''}, {device['serial'] or ''}\n")
 
     print(f"\nDone, detailed list saved to: {csv_path}\n")
 
