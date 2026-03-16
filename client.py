@@ -117,6 +117,11 @@ class Client:
             if not resp.ok:
                 return None
             data = resp.json()
-            return data.get('config')
+            if not isinstance(data, dict):
+                return None
+            config = data.get('config')
+            if isinstance(config, list):
+                config = '\n'.join(config)
+            return config
         except Exception:
             return None
