@@ -85,7 +85,8 @@ def cmd_billing(args, api: Client):
             sys.exit(1)
         print(f"Customer: {args.customer}\n")
         if args.ports:
-            _print_bill_ports(bill['bill_id'], api)
+            devices, = _api_fetch(api.list_devices)
+            _print_bill_ports(bill['bill_id'], api, devices)
         else:
             _print_bill_history(bill['bill_id'], api)
     else:
@@ -95,6 +96,9 @@ def cmd_billing(args, api: Client):
 def _print_bills(api: Client, show_ports: bool = False) -> None:
     template = "{0:20} {1:0} {2:20} {3:0} {4:0}"
     bills, = _api_fetch(api.list_bills)
+    devices = None
+    if show_ports:
+        devices, = _api_fetch(api.list_devices)
     for bill in bills:
         if 'ISP:' in bill['bill_name']:
             continue
@@ -104,10 +108,11 @@ def _print_bills(api: Client, show_ports: bool = False) -> None:
         else:
             print(template.format(bill['bill_name'], "95th:", formatted_95th, "", ""))
         if show_ports:
-            _print_bill_ports(bill['bill_id'], api)
+            _print_bill_ports(bill['bill_id'], api, devices)
 
 
-def _print_bill_ports(bill_id: int, api: Client) -> None:
+def _print_bill_ports(bill_id: int, api: Client, devices: list) -> None:
+    device_names = {d['device_id']: d['sysName'].split('.')[0] for d in devices}
     try:
         ports = api.get_bill_ports(bill_id)
     except Exception as e:
@@ -117,11 +122,15 @@ def _print_bill_ports(bill_id: int, api: Client) -> None:
         print("  (no ports assigned)")
         return
     for port in ports:
-        device   = port.get('hostname', port.get('device_id', 'unknown'))
-        ifname   = port.get('ifName', 'unknown')
-        rate_in  = format_mbps(port.get('ifInOctets_rate', 0) * 8)
-        rate_out = format_mbps(port.get('ifOutOctets_rate', 0) * 8)
-        print(f"  {device:25} {ifname:20} in: {rate_in:15} out: {rate_out}")
+        device_name = device_names.get(port.get('device_id'), str(port.get('device_id', '?')))
+        ifname      = port.get('ifName', 'unknown')
+        try:
+            detail   = api.get_port(port['port_id'])
+            rate_in  = format_mbps(detail.get('ifInOctets_rate', 0) * 8)
+            rate_out = format_mbps(detail.get('ifOutOctets_rate', 0) * 8)
+        except Exception:
+            rate_in = rate_out = 'n/a'
+        print(f"  {device_name:25} {ifname:20} in: {rate_in:15} out: {rate_out}")
 
 
 def _print_bill_history(bill_id: int, api: Client) -> None:
