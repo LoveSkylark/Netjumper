@@ -79,17 +79,20 @@ def _api_fetch(*fns):
 def cmd_billing(args, api: Client):
     if args.customer:
         bills, = _api_fetch(api.list_bills)
-        bill_id = next((b['bill_id'] for b in bills if b['bill_name'] == args.customer), None)
-        if not bill_id:
+        bill = next((b for b in bills if b['bill_name'] == args.customer), None)
+        if not bill:
             print("Customer not found!")
             sys.exit(1)
         print(f"Customer: {args.customer}\n")
-        _print_bill_history(bill_id, api)
+        if args.ports:
+            _print_bill_ports(bill['bill_id'], api)
+        else:
+            _print_bill_history(bill['bill_id'], api)
     else:
-        _print_bills(api)
+        _print_bills(api, show_ports=args.ports)
 
 
-def _print_bills(api: Client) -> None:
+def _print_bills(api: Client, show_ports: bool = False) -> None:
     template = "{0:20} {1:0} {2:20} {3:0} {4:0}"
     bills, = _api_fetch(api.list_bills)
     for bill in bills:
@@ -100,6 +103,18 @@ def _print_bills(api: Client) -> None:
             print(template.format(bill['bill_name'], "95th:", formatted_95th, "over:", bill['overuse']))
         else:
             print(template.format(bill['bill_name'], "95th:", formatted_95th, "", ""))
+        if show_ports:
+            _print_bill_ports(bill['bill_id'], api)
+
+
+def _print_bill_ports(bill_id: int, api: Client) -> None:
+    ports, = _api_fetch(lambda: api.get_bill_ports(bill_id))
+    for port in ports:
+        device   = port.get('hostname', 'unknown')
+        ifname   = port.get('ifName', 'unknown')
+        rate_in  = format_mbps(port.get('ifInOctets_rate', 0) * 8)
+        rate_out = format_mbps(port.get('ifOutOctets_rate', 0) * 8)
+        print(f"  {device:25} {ifname:20} in: {rate_in:15} out: {rate_out}")
 
 
 def _print_bill_history(bill_id: int, api: Client) -> None:
@@ -314,6 +329,7 @@ def build_parser():
 
     p_billing = sub.add_parser("billing",   help="Show 95th-percentile billing data")
     p_billing.add_argument("customer", nargs="?", help="Customer name (shows history when provided)")
+    p_billing.add_argument("-p", dest="ports", action="store_true", help="Show ports and current rates")
 
     sub.add_parser("inventory", help="List devices and write device-list.csv")
 
