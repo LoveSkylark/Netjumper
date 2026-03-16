@@ -146,12 +146,12 @@ def cmd_neighbors(args, api: Client):
     devices, links, ports = _api_fetch(api.list_devices, api.list_links, api.get_all_ports)
 
     neighbours = find_unknown_neighbors(devices, links)
-    for neighbour in neighbours:
+    matched = [n for n in neighbours if not args.hostname or re.search(args.hostname, n, re.IGNORECASE)]
+
+    for neighbour in matched:
         logging.info(f"Neighbour {neighbour} discovered")
-        if not args.hostname:
-            print(neighbour)
-        elif re.search(args.hostname, neighbour, re.IGNORECASE):
-            print(neighbour)
+        print(neighbour)
+        if args.ports:
             for device_name, port_name in get_sorted_port_list(neighbour, devices, links, ports):
                 print(f"  -> {device_name} ({port_name})")
 
@@ -160,6 +160,8 @@ def cmd_neighbors(args, api: Client):
         print("Add hostname to narrow list")
         print("Examples:")
         print("     lnms.py neighbors 'partial-or-full-hostname'")
+    elif matched and not args.ports:
+        print("(add -p to see port details)")
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +318,8 @@ def build_parser():
     sub.add_parser("inventory", help="List devices and write device-list.csv")
 
     p_neighbors = sub.add_parser("neighbors", help="Discover unknown LLDP/CDP neighbors")
-    p_neighbors.add_argument("hostname", nargs="?", help="Hostname prefix to filter on")
+    p_neighbors.add_argument("hostname", nargs="?", help="Regex filter on neighbor name")
+    p_neighbors.add_argument("-p", dest="ports", action="store_true", help="Show connected ports")
 
     sub.add_parser("download", help="Download device configs from Oxidized")
 
