@@ -15,6 +15,9 @@ class Settings:
 
 def load_settings() -> Settings:
     load_dotenv()
+    missing = [v for v in ('LibreNMS_URL', 'LibreNMS_APIToken') if not os.environ.get(v)]
+    if missing:
+        raise SystemExit(f"Missing required environment variable(s): {', '.join(missing)}")
     return Settings(
         url=os.environ['LibreNMS_URL'].rstrip('/'),
         token=os.environ['LibreNMS_APIToken'],

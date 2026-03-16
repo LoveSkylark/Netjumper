@@ -212,6 +212,24 @@ def cmd_firmware(args, api: Client):
 
 
 # ---------------------------------------------------------------------------
+# api
+# ---------------------------------------------------------------------------
+
+def cmd_api(_args, api: Client):
+    try:
+        data = api.ping()
+        info = data.get('system', {})
+        version = info.get('local_ver', 'unknown')
+        print(f"OK  API is reachable and token is valid (LibreNMS {version})")
+    except APIError as e:
+        print(f"FAIL  {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"FAIL  Could not reach API: {e}")
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
 # host
 # ---------------------------------------------------------------------------
 
@@ -252,6 +270,7 @@ COMMANDS = {
     "download":  cmd_download,
     "firmware":  cmd_firmware,
     "host":      cmd_host,
+    "api":       cmd_api,
 }
 
 
@@ -276,6 +295,8 @@ def build_parser():
     p_host = sub.add_parser("host", help="Manage /etc/hosts entries")
     host_sub = p_host.add_subparsers(dest="host_action", required=True)
     host_sub.add_parser("update", help="Sync LibreNMS devices to hosts file")
+
+    sub.add_parser("api", help=argparse.SUPPRESS)
 
     return parser
 
