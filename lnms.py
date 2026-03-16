@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 #  LibreNMS CLI
 #
@@ -281,8 +281,8 @@ def build_parser():
 
 
 def main():
-    settings = load_settings()
     args = build_parser().parse_args()
+    settings = load_settings()
     args.settings = settings
     setup_logging(f"lnms_{args.command}.log", settings.log_dir)
     api = Client(settings.url, settings.token)
