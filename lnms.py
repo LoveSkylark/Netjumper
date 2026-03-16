@@ -239,6 +239,8 @@ def cmd_api(_args, api: Client):
 def cmd_host(args, api: Client):
     if args.host_action == "update":
         _host_update(args, api)
+    elif args.host_action == "compare":
+        _host_compare(args, api)
 
 
 def _host_update(args, api: Client) -> None:
@@ -253,6 +255,32 @@ def _host_update(args, api: Client) -> None:
     logging.info(f"Written {len(entries)} entries to {hosts_list}")
 
     print(f"Done, {len(entries)} hosts written.")
+
+
+def _host_compare(args, api: Client) -> None:
+    devices, = _api_fetch(api.list_devices)
+    nms = {d['sysName'].lower().split('.', 1)[0]: d['hostname'] for d in devices}
+
+    hosts = Hosts(path=args.settings.hosts_dir)
+    current = {}
+    for entry in hosts.entries:
+        if entry.entry_type == 'ipv4' and hasattr(entry, 'names'):
+            for name in entry.names:
+                current[name] = entry.address
+
+    to_add    = [(n, ip) for n, ip in sorted(nms.items()) if n not in current]
+    to_update = [(n, current[n], ip) for n, ip in sorted(nms.items()) if n in current and current[n] != ip]
+
+    if to_add:
+        print("To be added:")
+        for name, ip in to_add:
+            print(f"  + {ip:<20} {name}")
+    if to_update:
+        print("To be updated:")
+        for name, old_ip, new_ip in to_update:
+            print(f"  ~ {old_ip:<20} -> {new_ip:<20} {name}")
+    if not to_add and not to_update:
+        print("Hosts file is already up to date.")
 
 
 def _write_hosts_file(entries: list[tuple[str, str]], path: str) -> None:
@@ -297,7 +325,8 @@ def build_parser():
 
     p_host = sub.add_parser("host", help="Manage /etc/hosts entries")
     host_sub = p_host.add_subparsers(dest="host_action", required=True)
-    host_sub.add_parser("update", help="Sync LibreNMS devices to hosts file")
+    host_sub.add_parser("update",  help="Sync LibreNMS devices to hosts file")
+    host_sub.add_parser("compare", help="Preview changes before running host update")
 
     sub.add_parser("api", help=argparse.SUPPRESS)
 
