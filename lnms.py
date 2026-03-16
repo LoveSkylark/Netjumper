@@ -108,9 +108,16 @@ def _print_bills(api: Client, show_ports: bool = False) -> None:
 
 
 def _print_bill_ports(bill_id: int, api: Client) -> None:
-    ports, = _api_fetch(lambda: api.get_bill_ports(bill_id))
+    try:
+        ports = api.get_bill_ports(bill_id)
+    except Exception as e:
+        print(f"  (could not fetch ports: {e})")
+        return
+    if not ports:
+        print("  (no ports assigned)")
+        return
     for port in ports:
-        device   = port.get('hostname', 'unknown')
+        device   = port.get('hostname', port.get('device_id', 'unknown'))
         ifname   = port.get('ifName', 'unknown')
         rate_in  = format_mbps(port.get('ifInOctets_rate', 0) * 8)
         rate_out = format_mbps(port.get('ifOutOctets_rate', 0) * 8)
