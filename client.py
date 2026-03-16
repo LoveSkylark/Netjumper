@@ -76,7 +76,8 @@ class Client:
         return self._get(f'/api/v0/bills/{bill_id}', cache=False)['bills'][0].get('ports', [])
 
     def get_port(self, port_id: int) -> dict:
-        return self._get(f'/api/v0/ports/{port_id}', cache=False)['port']
+        result = self._get(f'/api/v0/ports/{port_id}', cache=False)['port']
+        return result[0] if isinstance(result, list) else result
 
     # ------------------------------------------------------------------
     # Devices
