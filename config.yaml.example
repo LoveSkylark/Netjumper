@@ -1,0 +1,24 @@
+librenms:
+  url: http://your-librenms-host
+  token: your-api-token-here
+
+netbox:
+  url: http://your-netbox-host
+  token: your-netbox-token-here
+  regions:
+    - Region 1
+    - Region 2
+  site_mapping:
+    Datacenter 1:
+      name: "dc1-*"
+      location: "Verne*"
+    Datacenter 2:
+      name: "dc2-*"
+      location: "Fortress*"
+      ip: "192.168.100.0/24"
+
+paths:
+  log_dir: var/log/
+  info_dir: var/info/
+  config_dir: var/configs/
+  hosts_dir: /etc/hosts

@@ -3,12 +3,12 @@
 #  LibreNMS CLI
 #
 #  Usage:
-#    lnms.py billing [customer]
-#    lnms.py inventory
-#    lnms.py neighbors [hostname]
-#    lnms.py download
-#    lnms.py firmware [hardware] [min-version]
-#    lnms.py host update
+#    lnapi.py billing [customer]
+#    lnapi.py inventory
+#    lnapi.py neighbors [hostname]
+#    lnapi.py download
+#    lnapi.py firmware [hardware] [min-version]
+#    lnapi.py host update
 #
 #  @author Skylark (github.com/LoveSkylark)
 #  @license GPL
@@ -23,8 +23,10 @@ import argparse
 from python_hosts import Hosts, HostsEntry
 
 from config import load_settings
-from client import Client, APIError
-from parsers import (
+from lnapi_client import Client, APIError
+from nb_client import NetboxClient
+from nb_parsers import normalize_devices, normalize_nb_devices, match_site, compile_mapping, sites_from_mapping, find_closest_id, build_clean_lookup, DEVICE_ROLES
+from lnapi_parsers import (
     format_mbps,
     format_bill_date,
     find_unknown_neighbors,
@@ -329,6 +331,220 @@ def _write_hosts_file(entries: list[tuple[str, str]], path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# nb
+# ---------------------------------------------------------------------------
+
+def _nb_connect(args) -> NetboxClient:
+    if not args.settings.nb_url or not args.settings.nb_token:
+        raise SystemExit("Missing required config value(s): netbox.url, netbox.token")
+    return NetboxClient(args.settings.nb_url, args.settings.nb_token)
+
+
+def cmd_nb(args, api: Client):
+    if args.nb_action == "load":
+        cmd_nb_load(args, api)
+    elif args.nb_action == "prime":
+        cmd_nb_prime(args)
+    elif args.nb_action == "diff":
+        cmd_nb_diff(args, api)
+
+
+def cmd_nb_diff(args, api: Client) -> None:
+    nb = _nb_connect(args)
+
+    print("Fetching devices...")
+    lnms_devices, = _api_fetch(api.list_devices)
+    ldevices  = normalize_devices(lnms_devices)
+    nbdevices = normalize_nb_devices(nb.get_all_devices())
+
+    only_lnms = sorted(set(ldevices) - set(nbdevices))
+    only_nb   = sorted(set(nbdevices) - set(ldevices))
+
+    COMPARE_FIELDS = ['mgmt_ip', 'serial']
+    mismatches = {
+        name: {
+            f: (ldevices[name][f], nbdevices[name][f])
+            for f in COMPARE_FIELDS
+            if ldevices[name][f] and nbdevices[name][f]
+            and ldevices[name][f] != nbdevices[name][f]
+        }
+        for name in sorted(set(ldevices) & set(nbdevices))
+    }
+    mismatches = {k: v for k, v in mismatches.items() if v}
+
+    if only_lnms:
+        print(f"\nMissing in NetBox ({len(only_lnms)}):")
+        for name in only_lnms:
+            print(f"  - {name:<30} {ldevices[name]['mgmt_ip']}")
+
+    if only_nb:
+        print(f"\nMissing in LibreNMS ({len(only_nb)}):")
+        for name in only_nb:
+            print(f"  - {name:<30} {nbdevices[name]['mgmt_ip']}")
+
+    if mismatches:
+        print(f"\nField mismatches ({len(mismatches)}):")
+        for name, diffs in mismatches.items():
+            print(f"  {name}:")
+            for field, (lval, nbval) in diffs.items():
+                print(f"    {field:<12} LibreNMS: {lval}  NetBox: {nbval}")
+
+    if not only_lnms and not only_nb and not mismatches:
+        print("\nLibreNMS and NetBox are in sync.")
+    else:
+        print(f"\nSummary: {len(only_lnms)} missing in NetBox, {len(only_nb)} missing in LibreNMS, {len(mismatches)} mismatches.")
+
+
+def cmd_nb_prime(args) -> None:
+    nb = _nb_connect(args)
+    s  = args.settings
+
+    print("Checking NetBox...\n")
+    to_create = {
+        'Regions':      (nb.regions,      s.nb_regions),
+        'Sites':        (nb.sites,         sites_from_mapping(s.nb_site_mapping)),
+        'Device roles': (nb.device_roles,  DEVICE_ROLES),
+    }
+
+    plan  = {label: nb.diff_objects(ep, names) for label, (ep, names) in to_create.items()}
+    total = sum(len(v) for v in plan.values())
+
+    if total == 0:
+        print("Nothing to create — NetBox is already up to date.")
+        return
+
+    print("The following objects will be created:\n")
+    for label, missing in plan.items():
+        if missing:
+            print(f"  {label}:")
+            for name in missing:
+                print(f"    + {name}")
+
+    if input("\nProceed? [y/N] ").strip().lower() != 'y':
+        print("Aborted.")
+        return
+
+    print()
+    for label, (ep, _) in to_create.items():
+        if plan[label]:
+            print(f"{label}:")
+            nb.create_objects(ep, plan[label])
+
+    print("\nDone.")
+
+
+def cmd_nb_load(args, api: Client) -> None:
+    nb = _nb_connect(args)
+
+    print("Fetching devices from LibreNMS...")
+    devices, = _api_fetch(api.list_devices)
+    ldevices = normalize_devices(devices)
+
+    print("Caching NetBox lookups...")
+    device_types = build_clean_lookup(nb.get_device_types())
+    roles        = build_clean_lookup(nb.get_roles())
+    sites        = nb.get_sites()
+    nb_all       = {str(d.name).split('.')[0].casefold(): d for d in nb.get_all_devices()}
+    mapping      = compile_mapping(args.settings.nb_site_mapping)
+
+    # --- Plan phase ---
+    to_create = []
+    to_update = []
+    to_skip   = []
+
+    for name, info in sorted(ldevices.items()):
+        device_type_id = find_closest_id(info['device_type'], device_types)
+        role_id        = find_closest_id(info['device_role'], roles)
+        site_name      = match_site(name, info['mgmt_ip'], info['location'], mapping)
+        site_id        = sites.get(site_name) if site_name else None
+
+        if not device_type_id:
+            to_skip.append((name, f"no device type match: {info['device_type']}"))
+            continue
+        if not role_id:
+            to_skip.append((name, f"no role match: {info['device_role']}"))
+            continue
+        if not site_id:
+            to_skip.append((name, "no site match"))
+            continue
+
+        existing = nb_all.get(name)
+        if not existing:
+            to_create.append((name, info, device_type_id, role_id, site_id))
+        else:
+            changes = {}
+            if existing.device_type.id != device_type_id:
+                changes['device_type'] = (existing.device_type, device_type_id)
+            if existing.role.id != role_id:
+                changes['role'] = (existing.role, role_id)
+            if existing.site.id != site_id:
+                changes['site'] = (existing.site, site_id)
+            if info['serial'] and existing.serial != info['serial']:
+                changes['serial'] = (existing.serial, info['serial'])
+            if info['mgmt_ip']:
+                try:
+                    current_ip = existing.primary_ip4.address if existing.primary_ip4 else None
+                except AttributeError:
+                    current_ip = None
+                if current_ip != info['mgmt_ip'] + '/32':
+                    changes['mgmt_ip'] = (current_ip or 'none', info['mgmt_ip'])
+            if changes:
+                to_update.append((name, existing, info, device_type_id, role_id, site_id, changes))
+
+    # --- Display plan ---
+    if to_create:
+        print(f"\nTo be created ({len(to_create)}):")
+        for name, info, *_ in to_create:
+            print(f"  + {name:<30} {info['mgmt_ip']:<18} {info['device_type']}")
+
+    if to_update:
+        print(f"\nTo be updated ({len(to_update)}):")
+        for name, _, __, *rest in to_update:
+            changes = rest[-1]
+            print(f"  ~ {name}")
+            for field, (old, new) in changes.items():
+                print(f"      {field:<14} {str(old):<25} -> {new}")
+
+    if to_skip:
+        print(f"\nSkipped ({len(to_skip)}):")
+        for name, reason in to_skip:
+            print(f"  - {name:<30} ({reason})")
+
+    if not to_create and not to_update:
+        print("\nNetBox is already up to date.")
+        return
+
+    print()
+    if input("Proceed? [y/N] ").strip().lower() != 'y':
+        print("Aborted.")
+        return
+
+    # --- Apply phase ---
+    print()
+    for name, info, device_type_id, role_id, site_id in to_create:
+        existing = nb.create_device(name, device_type_id, role_id, site_id)
+        print(f"  CREATE {name}")
+        if existing and info['mgmt_ip']:
+            nb.ensure_mgmt_ip(existing, info['mgmt_ip'] + '/32')
+
+    for name, existing, info, device_type_id, role_id, site_id, changes in to_update:
+        if 'device_type' in changes:
+            existing.device_type = device_type_id
+        if 'role' in changes:
+            existing.role = role_id
+        if 'site' in changes:
+            existing.site = site_id
+        if 'serial' in changes:
+            existing.serial = info['serial']
+        existing.save()
+        print(f"  UPDATE {name}")
+        if info['mgmt_ip']:
+            nb.ensure_mgmt_ip(existing, info['mgmt_ip'] + '/32')
+
+    print(f"\nDone: {len(to_create)} created, {len(to_update)} updated, {len(to_skip)} skipped.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -339,12 +555,13 @@ COMMANDS = {
     "download":  cmd_download,
     "firmware":  cmd_firmware,
     "host":      cmd_host,
+    "nb":        cmd_nb,
     "api":       cmd_api,
 }
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="lnms.py", description="LibreNMS CLI")
+    parser = argparse.ArgumentParser(prog="lnapi.py", description="LibreNMS CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_billing = sub.add_parser("billing",   help="Show 95th-percentile billing data")
@@ -368,6 +585,12 @@ def build_parser():
     host_sub = p_host.add_subparsers(dest="host_action", required=True)
     host_sub.add_parser("update",  help="Sync LibreNMS devices to hosts file")
     host_sub.add_parser("compare", help="Preview changes before running host update")
+
+    p_nb = sub.add_parser("nb", help="NetBox operations")
+    nb_sub = p_nb.add_subparsers(dest="nb_action", required=True)
+    nb_sub.add_parser("load",    help="Sync LibreNMS devices into NetBox")
+    nb_sub.add_parser("prime",   help="Create base objects (regions, sites, roles) in NetBox")
+    nb_sub.add_parser("diff",    help="Compare devices between LibreNMS and NetBox")
 
     sub.add_parser("api", help=argparse.SUPPRESS)
 
