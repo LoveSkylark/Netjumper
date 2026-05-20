@@ -13,11 +13,11 @@ Netjumper runs tools in a Docker/Podman container (image and container name: `py
 
 ## Repository Layout
 
-- `build.sh`: build and run container
+- `install.sh`: deployment script (builds container + installs shell wrappers)
 - `docker-compose.yml`: compose alternative using the same mounts
 - `scripts/`: all Python scripts and modules (LibreNMS, ACI, and helpers)
 - `config.yaml.example`: configuration template
-- `install/setup.sh`: installs shell wrapper scripts to `/etc/profile.d`
+- `requirements.apt`: system packages for host machine
 
 ## Container Runtime Model
 
@@ -53,19 +53,13 @@ apic:
 
 ## Install
 
-1. Build and start the container:
+Deploy the container and install all dependencies (system packages + shell wrappers) in one step:
 
 ```bash
-bash build.sh
+bash install.sh
 ```
 
-2. Install wrapper scripts:
-
-```bash
-sudo bash install/setup.sh
-```
-
-3. Open a new shell (or source `/etc/profile`).
+Then open a new shell (or source `/etc/profile`) to use `slnms` and `saci` commands.
 
 ## Usage
 

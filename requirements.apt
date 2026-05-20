@@ -1,0 +1,8 @@
+mtr
+tcpdump
+iperf
+nmap
+dnsutils
+arp-scan
+whois
+netcat-openbsd
