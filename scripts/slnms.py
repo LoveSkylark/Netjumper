@@ -654,7 +654,10 @@ def cmd_server(args, _api=None):
     import sys
     from pathlib import Path
     config_path = Path(args.config) if hasattr(args, 'config') and args.config else None
-    servers, active = list_librenms_servers(config_path or None)
+    if config_path:
+        servers, active = list_librenms_servers(config_path)
+    else:
+        servers, active = list_librenms_servers()
     if args.action == 'list':
         print("Configured LibreNMS servers:")
         for i, (k, v) in enumerate(sorted(servers.items()), 1):
@@ -676,7 +679,10 @@ def cmd_server(args, _api=None):
                 print(f"Server '{target}' not found. Available: {', '.join(keys)}")
                 sys.exit(1)
             server_key = target
-        set_librenms_active(server_key, config_path or None)
+        if config_path:
+            set_librenms_active(server_key, config_path)
+        else:
+            set_librenms_active(server_key)
         print(f"Active LibreNMS server set to: {server_key}")
 
 

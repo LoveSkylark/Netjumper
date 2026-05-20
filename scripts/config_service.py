@@ -91,17 +91,18 @@ def load_settings(path: Path = CONFIG_FILE, force_server: str = None) -> Setting
         nb_site_mapping=nb.get('site_mapping', {}),
     )
 
-def list_librenms_servers(path: Path = CONFIG_FILE) -> dict:
+def list_librenms_servers(path: Path | None = None) -> dict:
     """Return dict of all LibreNMS servers in config."""
+    path = path or CONFIG_FILE
     if not path.exists():
         raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
     with open(path) as f:
         cfg = yaml.safe_load(f)
     return _find_librenms_servers(cfg), cfg.get('librenms_active')
 
-def set_librenms_active(server_key: str, path: Path = CONFIG_FILE):
+def set_librenms_active(server_key: str, path: Path | None = None):
     """Set the active LibreNMS server in config file."""
-    import yaml
+    path = path or CONFIG_FILE
     if not path.exists():
         raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
     with open(path) as f:
