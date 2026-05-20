@@ -9,6 +9,7 @@ import getpass
 import argparse
 import requests
 import urllib3
+from pathlib import Path
 from functools import lru_cache
 from ipaddress import ip_address, ip_network
 from requests.adapters import HTTPAdapter
@@ -198,10 +199,14 @@ class ACIClient:
         return None
 
     def save_token_to_file(self):
-        dir_path = os.path.dirname(self.token_file)
-        if dir_path:
-            os.makedirs(dir_path, exist_ok=True)
-        with open(self.token_file, "w") as f:
+        token_path = Path(self.token_file)
+        
+        # If token_file is a directory, save as 'token' inside it
+        if token_path.is_dir() or str(token_path).endswith('/'):
+            token_path = token_path / 'token' if token_path.is_dir() else Path(str(token_path).rstrip('/')) / 'token'
+        
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(token_path, "w") as f:
             f.write(self.token)
 
     def is_token_valid(self):
