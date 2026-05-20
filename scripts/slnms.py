@@ -24,7 +24,7 @@ from ipaddress import ip_address
 
 from python_hosts import Hosts, HostsEntry
 
-from scripts.config_service import load_settings
+from scripts.config_service import load_settings, list_librenms_servers, set_librenms_active
 from scripts.slnms_client import Client, APIError
 from scripts.nb_client import NetboxClient
 from scripts.nb_parsers import normalize_devices, normalize_nb_devices, match_site, compile_mapping, sites_from_mapping, find_closest_id, build_clean_lookup, DEVICE_ROLES
@@ -649,6 +649,37 @@ def cmd_nb_load(args, api: Client) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
+def cmd_server(args, _api=None):
+    import sys
+    from pathlib import Path
+    config_path = Path(args.config) if hasattr(args, 'config') and args.config else None
+    servers, active = list_librenms_servers(config_path or None)
+    if args.action == 'list':
+        print("Configured LibreNMS servers:")
+        for i, (k, v) in enumerate(sorted(servers.items()), 1):
+            marker = '*' if k == active else ' '
+            print(f" {marker} {i}. {k:12} {v.get('url', '')}")
+        print(f"\nActive: {active if active else '(not set)'}")
+    elif args.action == 'switch':
+        # Accept by name or number
+        target = args.target
+        keys = list(sorted(servers.keys()))
+        if target.isdigit():
+            idx = int(target) - 1
+            if idx < 0 or idx >= len(keys):
+                print(f"Invalid server number: {target}")
+                sys.exit(1)
+            server_key = keys[idx]
+        else:
+            if target not in servers:
+                print(f"Server '{target}' not found. Available: {', '.join(keys)}")
+                sys.exit(1)
+            server_key = target
+        set_librenms_active(server_key, config_path or None)
+        print(f"Active LibreNMS server set to: {server_key}")
+
+
 COMMANDS = {
     "billing":   cmd_billing,
     "inventory": cmd_inventory,
@@ -658,7 +689,9 @@ COMMANDS = {
     "host":      cmd_host,
     "nb":        cmd_nb,
     "api":       cmd_api,
+    "server":    cmd_server,
 }
+
 
 
 def build_parser():
@@ -696,6 +729,13 @@ def build_parser():
     nb_sub.add_parser("diff",    help="Compare devices between LibreNMS and NetBox")
 
     sub.add_parser("api", help=argparse.SUPPRESS)
+
+    # Server management
+    p_server = sub.add_parser("server", help="List or switch LibreNMS servers")
+    p_server_sub = p_server.add_subparsers(dest="action", required=True)
+    p_server_list = p_server_sub.add_parser("list", help="List all configured LibreNMS servers")
+    p_server_switch = p_server_sub.add_parser("switch", help="Switch active LibreNMS server")
+    p_server_switch.add_argument("target", help="Server name or number (see 'list')")
 
     return parser
 

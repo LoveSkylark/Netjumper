@@ -1,9 +1,14 @@
 # -----------------------------------------------------------------------------
-# LibreNMS settings (required)
+# LibreNMS servers (multi-server support)
 # -----------------------------------------------------------------------------
-librenms:
-  url: https://librenms.example.com
-  token: your-librenms-api-token
+librenms1:
+  url: https://librenms1.example.com
+  token: your-librenms1-api-token
+librenms2:
+  url: https://librenms2.example.com
+  token: your-librenms2-api-token
+# ...add more as needed (librenms3, librenms4, ...)
+librenms_active: librenms1
 
 # -----------------------------------------------------------------------------
 # ACI settings for saci

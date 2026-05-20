@@ -38,24 +38,45 @@ class APICSettings:
     password: str = ''
 
 
-def load_settings(path: Path = CONFIG_FILE) -> Settings:
+
+def _find_librenms_servers(cfg: dict) -> dict:
+    """Return a dict of all librenmsN servers in config."""
+    return {k: v for k, v in cfg.items() if k.startswith('librenms') and k[9:].isdigit() and isinstance(v, dict)}
+
+def load_settings(path: Path = CONFIG_FILE, force_server: str = None) -> Settings:
     if not path.exists():
         raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
 
     with open(path) as f:
         cfg = yaml.safe_load(f)
 
-    lnms = cfg.get('librenms', {})
+    # Multi-server support
+    servers = _find_librenms_servers(cfg)
+    active_key = force_server or cfg.get('librenms_active')
+    if not servers:
+        # Fallback: support legacy single-server config
+        lnms = cfg.get('librenms', {})
+        if not lnms:
+            raise SystemExit("No LibreNMS servers found in config. Add at least 'librenms1' or 'librenms'.")
+        url = lnms.get('url')
+        token = lnms.get('token')
+        if not url or not token:
+            raise SystemExit("Missing required config value(s): librenms.url, librenms.token")
+    else:
+        if not active_key or active_key not in servers:
+            raise SystemExit(f"librenms_active not set or invalid. Available: {', '.join(servers.keys())}")
+        lnms = servers[active_key]
+        url = lnms.get('url')
+        token = lnms.get('token')
+        if not url or not token:
+            raise SystemExit(f"Missing required config value(s) for {active_key}: url, token")
+
     nb   = cfg.get('netbox', {})
     paths = cfg.get('paths', {})
 
-    missing = [k for k, v in {'librenms.url': lnms.get('url'), 'librenms.token': lnms.get('token')}.items() if not v]
-    if missing:
-        raise SystemExit(f"Missing required config value(s): {', '.join(missing)}")
-
     return Settings(
-        url=lnms['url'].rstrip('/'),
-        token=lnms['token'],
+        url=url.rstrip('/'),
+        token=token,
         log_dir=paths.get('log_dir', 'var/log/'),
         info_dir=paths.get('info_dir', 'var/info/'),
         config_dir=paths.get('config_dir', 'var/configs/'),
@@ -65,6 +86,28 @@ def load_settings(path: Path = CONFIG_FILE) -> Settings:
         nb_regions=nb.get('regions', []),
         nb_site_mapping=nb.get('site_mapping', {}),
     )
+
+def list_librenms_servers(path: Path = CONFIG_FILE) -> dict:
+    """Return dict of all LibreNMS servers in config."""
+    if not path.exists():
+        raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+    return _find_librenms_servers(cfg), cfg.get('librenms_active')
+
+def set_librenms_active(server_key: str, path: Path = CONFIG_FILE):
+    """Set the active LibreNMS server in config file."""
+    import yaml
+    if not path.exists():
+        raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+    servers = _find_librenms_servers(cfg)
+    if server_key not in servers:
+        raise SystemExit(f"Server '{server_key}' not found in config. Available: {', '.join(servers.keys())}")
+    cfg['librenms_active'] = server_key
+    with open(path, 'w') as f:
+        yaml.safe_dump(cfg, f, default_flow_style=False)
 
 
 def load_apic_settings(path: Path = CONFIG_FILE) -> APICSettings:
