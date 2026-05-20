@@ -7,9 +7,9 @@ import yaml
 
 # Inside container: mounted at /workspace/config.yaml
 # Outside container: at repo root/config.yaml
-_CONTAINER_CONFIG = Path('/workspace/config.yaml')
+_WORKSPACE_CONFIG = Path('/workspace/config.yaml')
 _LOCAL_CONFIG = Path(__file__).resolve().parent.parent / 'config.yaml'
-CONFIG_FILE = _CONTAINER_CONFIG if _CONTAINER_CONFIG.exists() else _LOCAL_CONFIG
+CONFIG_FILE = _WORKSPACE_CONFIG if _WORKSPACE_CONFIG.exists() else _LOCAL_CONFIG
 
 
 @dataclass

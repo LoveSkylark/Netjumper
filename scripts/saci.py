@@ -186,8 +186,14 @@ class ACIClient:
         return None
 
     def load_token_from_file(self):
-        if os.path.exists(self.token_file):
-            with open(self.token_file, "r") as f:
+        token_path = Path(self.token_file)
+        
+        # If token_file is a directory, look for a 'token' file inside it
+        if token_path.is_dir():
+            token_path = token_path / 'token'
+        
+        if token_path.exists() and token_path.is_file():
+            with open(token_path, "r") as f:
                 return f.read().strip()
         return None
 
