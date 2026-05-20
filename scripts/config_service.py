@@ -40,8 +40,12 @@ class APICSettings:
 
 
 def _find_librenms_servers(cfg: dict) -> dict:
-    """Return a dict of all librenmsN servers in config."""
-    return {k: v for k, v in cfg.items() if k.startswith('librenms') and k[9:].isdigit() and isinstance(v, dict)}
+    """Return a dict of all librenmsN servers and legacy 'librenms' in config."""
+    servers = {k: v for k, v in cfg.items() if k.startswith('librenms') and k[9:].isdigit() and isinstance(v, dict)}
+    # Also include legacy 'librenms' if present and is a dict
+    if 'librenms' in cfg and isinstance(cfg['librenms'], dict):
+        servers['librenms'] = cfg['librenms']
+    return servers
 
 def load_settings(path: Path = CONFIG_FILE, force_server: str = None) -> Settings:
     if not path.exists():
