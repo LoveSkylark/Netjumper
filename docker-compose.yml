@@ -11,3 +11,4 @@ services:
       - ./scripts:/scripts
       - .:/workspace
       - ~/.aci_token:/root/.aci_token
+      - /etc/hosts:/host_etc_hosts

@@ -60,4 +60,3 @@ paths:
   log_dir: var/log/
   info_dir: var/info/
   config_dir: var/configs/
-  hosts_dir: /etc/hosts

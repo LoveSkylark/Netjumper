@@ -10,6 +10,7 @@ import yaml
 _WORKSPACE_CONFIG = Path('/workspace/config.yaml')
 _LOCAL_CONFIG = Path(__file__).resolve().parent.parent / 'config.yaml'
 CONFIG_FILE = _WORKSPACE_CONFIG if _WORKSPACE_CONFIG.exists() else _LOCAL_CONFIG
+HOSTS_FILE = '/host_etc_hosts'
 
 
 @dataclass
@@ -21,7 +22,7 @@ class Settings:
     log_dir: str = 'var/log/'
     info_dir: str = 'var/info/'
     config_dir: str = 'var/configs/'
-    hosts_dir: str = '/etc/hosts'
+    hosts_dir: str = HOSTS_FILE
     # NetBox
     nb_url: str = ''
     nb_token: str = ''
@@ -58,7 +59,7 @@ def load_settings(path: Path = CONFIG_FILE) -> Settings:
         log_dir=paths.get('log_dir', 'var/log/'),
         info_dir=paths.get('info_dir', 'var/info/'),
         config_dir=paths.get('config_dir', 'var/configs/'),
-        hosts_dir=paths.get('hosts_dir', '/etc/hosts'),
+        hosts_dir=HOSTS_FILE,
         nb_url=nb.get('url', '').rstrip('/'),
         nb_token=nb.get('token', ''),
         nb_regions=nb.get('regions', []),
