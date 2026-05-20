@@ -1,0 +1,13 @@
+services:
+  python-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: python
+    container_name: python
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./scripts:/scripts
+      - .:/workspace
+      - ~/.aci_token:/root/.aci_token

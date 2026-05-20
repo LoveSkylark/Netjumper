@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 
 
-CONFIG_FILE = Path(__file__).parent / 'config.yaml'
+CONFIG_FILE = Path(__file__).resolve().parent.parent / 'config.yaml'
 
 
 @dataclass
@@ -23,6 +23,14 @@ class Settings:
     nb_token: str = ''
     nb_regions: list = field(default_factory=list)
     nb_site_mapping: dict = field(default_factory=dict)
+
+
+@dataclass
+class APICSettings:
+    url: str
+    verify_ssl: bool = False
+    username: str = ''
+    password: str = ''
 
 
 def load_settings(path: Path = CONFIG_FILE) -> Settings:
@@ -51,4 +59,24 @@ def load_settings(path: Path = CONFIG_FILE) -> Settings:
         nb_token=nb.get('token', ''),
         nb_regions=nb.get('regions', []),
         nb_site_mapping=nb.get('site_mapping', {}),
+    )
+
+
+def load_apic_settings(path: Path = CONFIG_FILE) -> APICSettings:
+    if not path.exists():
+        raise SystemExit(f"Config file not found: {path}\nCopy config.yaml.example to config.yaml and fill in your values.")
+
+    with open(path) as f:
+        cfg = yaml.safe_load(f)
+
+    apic = cfg.get('apic', {})
+    verify_ssl_raw = apic.get('verify_ssl', False)
+    verify_ssl = verify_ssl_raw if isinstance(verify_ssl_raw, bool) else str(verify_ssl_raw).strip().lower() in ('true', 'yes', '1')
+    url = str(apic.get('url', '')).strip().rstrip('/')
+
+    return APICSettings(
+        url=url,
+        verify_ssl=verify_ssl,
+        username=str(apic.get('username', '')).strip(),
+        password=str(apic.get('password', '')).strip(),
     )

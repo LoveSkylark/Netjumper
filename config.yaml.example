@@ -1,22 +1,61 @@
+# -----------------------------------------------------------------------------
+# LibreNMS settings (required)
+# -----------------------------------------------------------------------------
 librenms:
-  url: http://your-librenms-host
-  token: your-api-token-here
+  url: https://librenms.example.com
+  token: your-librenms-api-token
 
+# -----------------------------------------------------------------------------
+# ACI settings for saci
+# -----------------------------------------------------------------------------
+apic:
+  url: https://apic.example.com
+  verify_ssl: false
+  # Optional: if omitted, saci prompts for credentials interactively.
+  username: admin
+  password: your-apic-password
+
+# -----------------------------------------------------------------------------
+# NetBox settings for slnms nb * commands
+# -----------------------------------------------------------------------------
 netbox:
-  url: http://your-netbox-host
-  token: your-netbox-token-here
-  regions:
-    - Region 1
-    - Region 2
-  site_mapping:
-    Datacenter 1:
-      name: "dc1-*"
-      location: "Verne*"
-    Datacenter 2:
-      name: "dc2-*"
-      location: "Fortress*"
-      ip: "192.168.100.0/24"
+  url: https://netbox.example.com
+  token: your-netbox-token
 
+  # Created by `slnms nb prime` if missing.
+  regions:
+    - Iceland
+    - Europe
+
+  # Site mapping rules used by `slnms nb load`.
+  #
+  # Structure:
+  #   site_mapping:
+  #     <NetBox Site Name>:
+  #       name: "pattern"       # Optional, wildcard match against device name
+  #       location: "pattern"   # Optional, wildcard match against device location
+  #       ip: "x.x.x.x/yy"      # Optional, CIDR match against management IP
+  #
+  # Matching details:
+  # - name/location support '*' wildcards (case-insensitive).
+  # - ip must be valid CIDR notation.
+  # - A device is assigned to the first site whose rule matches.
+  # - You can combine name/location/ip under one site to widen matching.
+  site_mapping:
+    Reykjavik DC:
+      name: "rvk-*"
+      location: "Reykjavik*"
+
+    Keflavik Edge:
+      name: "kef-*"
+      ip: "10.60.0.0/16"
+
+    Akureyri Core:
+      location: "Akureyri*"
+
+# -----------------------------------------------------------------------------
+# Local file paths
+# -----------------------------------------------------------------------------
 paths:
   log_dir: var/log/
   info_dir: var/info/

@@ -3,12 +3,12 @@
 #  LibreNMS CLI
 #
 #  Usage:
-#    lnapi.py billing [customer]
-#    lnapi.py inventory
-#    lnapi.py neighbors [hostname]
-#    lnapi.py download
-#    lnapi.py firmware [hardware] [min-version]
-#    lnapi.py host update
+#    slnms.py billing [customer]
+#    slnms.py inventory
+#    slnms.py neighbors [hostname]
+#    slnms.py download
+#    slnms.py firmware [hardware] [min-version]
+#    slnms.py host update
 #
 #  @author Skylark (github.com/LoveSkylark)
 #  @license GPL
@@ -22,11 +22,11 @@ import argparse
 
 from python_hosts import Hosts, HostsEntry
 
-from config import load_settings
-from lnapi_client import Client, APIError
-from nb_client import NetboxClient
-from nb_parsers import normalize_devices, normalize_nb_devices, match_site, compile_mapping, sites_from_mapping, find_closest_id, build_clean_lookup, DEVICE_ROLES
-from lnapi_parsers import (
+from scripts.config_service import load_settings
+from scripts.slnms_client import Client, APIError
+from scripts.nb_client import NetboxClient
+from scripts.nb_parsers import normalize_devices, normalize_nb_devices, match_site, compile_mapping, sites_from_mapping, find_closest_id, build_clean_lookup, DEVICE_ROLES
+from scripts.slnms_parsers import (
     format_mbps,
     format_bill_date,
     find_unknown_neighbors,
@@ -36,6 +36,7 @@ from lnapi_parsers import (
     print_firmware_list,
     get_vendor,
 )
+from scripts.tree_utils import CLITreeBuilder
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +186,10 @@ def cmd_neighbors(args, api: Client):
     neighbours = find_unknown_neighbors(devices, links)
     matched = [n for n in neighbours if not args.hostname or re.search(args.hostname, n, re.IGNORECASE)]
 
+    if args.tree:
+        _print_neighbors_tree(matched, devices, links, ports, show_ports=args.ports)
+        return
+
     for neighbour in matched:
         logging.info(f"Neighbour {neighbour} discovered")
         print(neighbour)
@@ -199,6 +204,27 @@ def cmd_neighbors(args, api: Client):
         print("     lnms.py neighbors 'partial-or-full-hostname'")
     elif matched and not args.ports:
         print("(add -p to see port details)")
+
+
+def _print_neighbors_tree(matched: list[str], devices: list[dict], links: list[dict], ports: list[dict], show_ports: bool) -> None:
+    tree = CLITreeBuilder()
+
+    for neighbour in matched:
+        logging.info(f"Neighbour {neighbour} discovered")
+        if show_ports:
+            port_rows = get_sorted_port_list(neighbour, devices, links, ports)
+            if not port_rows:
+                tree.add(neighbour, label="(no local ports)")
+                continue
+            for device_name, port_name in port_rows:
+                tree.add(neighbour, device_name or "unknown-device", label=port_name or "unknown-port")
+        else:
+            tree.add(neighbour, label="discovered")
+
+    if matched:
+        tree.print(label="Unknown neighbors")
+    else:
+        print("No unknown neighbors found.")
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +266,10 @@ def cmd_firmware(args, api: Client):
     devices, = _api_fetch(api.list_devices)
     grouped = group_by_hardware_version(devices)
     save_firmware_files(grouped, firmware_dir)
-    print_firmware_list(grouped, args.hardware, args.version)
+    if args.tree:
+        _print_firmware_tree(grouped, args.hardware, args.version)
+    else:
+        print_firmware_list(grouped, args.hardware, args.version)
 
     if not args.version:
         print()
@@ -249,6 +278,25 @@ def cmd_firmware(args, api: Client):
         if not args.hardware:
             print("     lnms.py firmware WS-C4500X-32")
         print("     lnms.py firmware WS-C4500X-32 03.11")
+
+
+def _print_firmware_tree(grouped: dict, hardware_filter: str | None, version_filter: str | None) -> None:
+    tree = CLITreeBuilder()
+
+    for hardware, version_dict in sorted(grouped.items()):
+        if hardware_filter and hardware_filter != hardware:
+            continue
+
+        for version, ip_list in sorted(version_dict.items(), reverse=bool(hardware_filter)):
+            if hardware_filter and version_filter and version < version_filter:
+                continue
+            for ip in sorted(ip_list):
+                tree.add(hardware, version, label=ip)
+
+    if tree.tree:
+        tree.print(label="Firmware inventory")
+    else:
+        print("No firmware entries matched the provided filters.")
 
 
 # ---------------------------------------------------------------------------
@@ -561,7 +609,7 @@ COMMANDS = {
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(prog="lnapi.py", description="LibreNMS CLI")
+    parser = argparse.ArgumentParser(prog="slnms", description="LibreNMS CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_billing = sub.add_parser("billing",   help="Show 95th-percentile billing data")
@@ -574,12 +622,14 @@ def build_parser():
     p_neighbors = sub.add_parser("neighbors", help="Discover unknown LLDP/CDP neighbors")
     p_neighbors.add_argument("hostname", nargs="?", help="Regex filter on neighbor name")
     p_neighbors.add_argument("-p", dest="ports", action="store_true", help="Show connected ports")
+    p_neighbors.add_argument("-t", "--tree", action="store_true", help="Print output as a tree")
 
     sub.add_parser("download", help="Download device configs from Oxidized")
 
     p_firmware = sub.add_parser("firmware", help="List devices grouped by hardware/firmware version")
     p_firmware.add_argument("hardware", nargs="?", help="Hardware model to filter on")
     p_firmware.add_argument("version",  nargs="?", help="Minimum version to filter on")
+    p_firmware.add_argument("-t", "--tree", action="store_true", help="Print output as a tree")
 
     p_host = sub.add_parser("host", help="Manage /etc/hosts entries")
     host_sub = p_host.add_subparsers(dest="host_action", required=True)
