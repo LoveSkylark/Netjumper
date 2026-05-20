@@ -660,10 +660,17 @@ def cmd_server(args, _api=None):
         servers, active = list_librenms_servers()
     if args.action == 'list':
         print("Configured LibreNMS servers:")
-        for i, (k, v) in enumerate(sorted(servers.items()), 1):
+        sorted_servers = sorted(servers.items())
+        for i, (k, v) in enumerate(sorted_servers, 1):
             marker = '*' if k == active else ' '
-            print(f" {marker} {i}. {k:12} {v.get('url', '')}")
-        print(f"\nActive: {active if active else '(not set)'}")
+            print(f" {marker} {i}. {v.get('url', '')}")
+
+        active_index = next((i for i, (k, _) in enumerate(sorted_servers, 1) if k == active), None)
+        if active_index is None:
+            print("\nActive: (not set)")
+        else:
+            active_url = sorted_servers[active_index - 1][1].get('url', '')
+            print(f"\nActive: {active_index}. {active_url}")
     elif args.action == 'switch':
         # Accept by name or number
         target = args.target
