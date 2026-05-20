@@ -1,0 +1,7 @@
+# Local-only compose overrides.
+# Uncomment the lines below to pin a host mapping inside the container.
+#
+# services:
+#   python-runner:
+#     extra_hosts:
+#       - "apic01:10.1.1.1"
