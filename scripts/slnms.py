@@ -16,9 +16,11 @@
 import os
 import re
 import sys
+import socket
 import logging
 import logging.handlers
 import argparse
+from ipaddress import ip_address
 
 from python_hosts import Hosts, HostsEntry
 
@@ -63,6 +65,36 @@ def setup_logging(log_file: str, log_dir: str) -> None:
 def _ensure_dir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def _device_ipv4(device: dict) -> str | None:
+    """Best-effort extraction of an IPv4 address from a LibreNMS device record."""
+    for candidate in (device.get('ip'), device.get('hostname')):
+        if not candidate:
+            continue
+        raw = str(candidate).strip()
+        if not raw:
+            continue
+
+        # Handle values like "10.0.0.1/32"
+        addr = raw.split('/', 1)[0]
+        try:
+            parsed = ip_address(addr)
+            if parsed.version == 4:
+                return str(parsed)
+        except ValueError:
+            pass
+
+        # Fallback: resolve hostname/FQDN to IPv4
+        try:
+            resolved = socket.gethostbyname(raw)
+            parsed = ip_address(resolved)
+            if parsed.version == 4:
+                return str(parsed)
+        except (OSError, ValueError):
+            pass
+
+    return None
 
 
 def _api_fetch(*fns):
@@ -334,7 +366,15 @@ def cmd_host(args, api: Client):
 
 def _host_update(args, api: Client) -> None:
     devices, = _api_fetch(api.list_devices)
-    entries = [(d['sysName'].lower().split('.', 1)[0], d['hostname']) for d in devices]
+    entries: list[tuple[str, str]] = []
+    skipped = 0
+    for d in devices:
+        name = d['sysName'].lower().split('.', 1)[0]
+        ip = _device_ipv4(d)
+        if ip:
+            entries.append((name, ip))
+        else:
+            skipped += 1
 
     _write_hosts_file(entries, args.settings.hosts_dir)
     logging.info(f"Written {len(entries)} entries to {args.settings.hosts_dir}")
@@ -343,12 +383,22 @@ def _host_update(args, api: Client) -> None:
     _write_hosts_file(entries, hosts_list)
     logging.info(f"Written {len(entries)} entries to {hosts_list}")
 
+    if skipped:
+        logging.warning(f"Skipped {skipped} device(s) without a valid IPv4 address")
+
     print(f"Done, {len(entries)} hosts written.")
 
 
 def _host_compare(args, api: Client) -> None:
     devices, = _api_fetch(api.list_devices)
-    nms = {d['sysName'].lower().split('.', 1)[0]: d['hostname'] for d in devices}
+    nms = {}
+    skipped = 0
+    for d in devices:
+        ip = _device_ipv4(d)
+        if ip:
+            nms[d['sysName'].lower().split('.', 1)[0]] = ip
+        else:
+            skipped += 1
 
     hosts = Hosts(path=args.settings.hosts_dir)
     current = {}
@@ -370,6 +420,8 @@ def _host_compare(args, api: Client) -> None:
             print(f"  ~ {old_ip:<20} -> {new_ip:<20} {name}")
     if not to_add and not to_update:
         print("Hosts file is already up to date.")
+    if skipped:
+        print(f"Skipped {skipped} device(s) without a valid IPv4 address.")
 
 
 def _write_hosts_file(entries: list[tuple[str, str]], path: str) -> None:
