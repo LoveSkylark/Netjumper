@@ -54,7 +54,8 @@ def setup_logging(log_file: str, log_dir: str) -> None:
                 os.path.join(log_dir, log_file),
                 maxBytes=5 * 1024 * 1024,
                 backupCount=10,
-            )
+            ),
+            logging.StreamHandler(sys.stderr),  # Also output to stderr for errors
         ],
     )
 
