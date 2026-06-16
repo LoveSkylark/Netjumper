@@ -117,6 +117,11 @@ def parse_args():
     aaep_parser.add_argument("name", nargs="?", default=None, help="Optional AAEP name to show connection map")
     aaep_parser.add_argument("-l", "--list-endpoints", nargs="?", const=True, default=False, help="List all MAC/IP addresses connected to the AAEP, optionally filter by EPG path (e.g., Tenant/App/EPG)")
 
+    vmm_parser = subparsers.add_parser("vmm", help="List all Virtual Networking Domains (VMware, Nutanix, etc.)")
+    vmm_parser.add_argument("domain", nargs="?", default=None, help="VMM domain name or provider/domain (e.g., vCloud or VMware/vCloud)")
+    vmm_parser.add_argument("vmm_action", nargs="?", choices=["vlan"], default=None, help="Show VLAN table for the specified domain")
+    vmm_parser.add_argument("vmm_vlan_cmd", nargs="?", choices=["static", "dynamic"], default=None, help="Limit VLAN table to static or dynamic entries")
+
     route_parser = subparsers.add_parser("route", help="Show consolidated routing table for a VRF across all leaf nodes")
     route_parser.add_argument("vrf", help="VRF to look up in <tenant>:<vrf> format (e.g., myTenant:myVRF)")
     route_parser.add_argument("filter", nargs="?", default=None, help="Filter routes by prefix string (e.g., 172.16.0) or CIDR subnet containment (e.g., 10.0.0.0/8)")
@@ -2415,6 +2420,401 @@ class ACIClient:
         else:
             self.handle_aaep_list_command()
 
+    def handle_vmm_command(self):
+        """List all Virtual Networking Domains (VMM domains)."""
+        print("Listing all Virtual Networking Domains (VMM):\n")
+
+        vmm_domains = self.query_api("/api/node/class/vmmDomP.json")
+        if not vmm_domains:
+            print("No VMM domains found.")
+            return
+
+        tree = {}
+        total = 0
+
+        for item in vmm_domains:
+            attr = item.get("vmmDomP", {}).get("attributes", {})
+            dn = attr.get("dn", "")
+            name = attr.get("name", "")
+            if not name:
+                continue
+
+            # DN format: uni/vmmp-<provider>/dom-<domain>
+            provider = "unknown"
+            m = re.search(r"/vmmp-([^/]+)/", dn)
+            if m:
+                provider = m.group(1)
+
+            tree.setdefault(provider, []).append(name)
+            total += 1
+
+        if not tree:
+            print("No VMM domains found.")
+            return
+
+        sorted_tree = {
+            provider: sorted(domains)
+            for provider, domains in sorted(tree.items())
+        }
+        self.print_tree({"VMM Domains": sorted_tree})
+        print(f"\nTotal: {total} VMM domain(s)")
+
+    def handle_vmm_epg_command(self, domain_filter: Optional[str] = None):
+        """List EPGs associated with VMM domains and their explicit VLAN assignment."""
+        filter_label = f" for domain '{domain_filter}'" if domain_filter else ""
+        print(f"Listing all EPGs associated with VMM domains{filter_label}:\n")
+
+        domdef_dynamic_map = self._build_epg_domain_domdef_vlans_map()
+        deployed_map = self._build_vmm_deployed_epg_vlans_map()
+
+        epg_domain_attachments = self.query_api("/api/node/class/fvRsDomAtt.json")
+        tree = {}
+        total = 0
+
+        for item in epg_domain_attachments:
+            attr = item.get("fvRsDomAtt", {}).get("attributes", {})
+            dn = attr.get("dn", "")
+            tDn = attr.get("tDn", "")
+
+            if "/vmmp-" not in tDn or "/dom-" not in tDn:
+                continue
+
+            epg_info = parse_regex(RE_EPG, dn)
+            if not epg_info:
+                continue
+
+            provider_match = re.search(r"/vmmp-([^/]+)/", tDn)
+            domain_match = re.search(r"/dom-([^/]+)", tDn)
+            if not provider_match or not domain_match:
+                continue
+
+            provider = provider_match.group(1)
+            domain = domain_match.group(1)
+
+            if domain_filter:
+                filt = domain_filter.strip().lower()
+                if filt not in (domain.lower(), f"{provider.lower()}/{domain.lower()}"):
+                    continue
+
+            tenant = epg_info["tenant"]
+            epg_label = format_epg_label(dn)
+            if epg_label.startswith("EPG: "):
+                epg_label = epg_label[5:]
+            epg_dn = f"uni/tn-{epg_info['tenant']}/ap-{epg_info['ap']}/epg-{epg_info['epg']}"
+
+            selected_vlan, binding_type = self._resolve_vmm_attachment_vlan(
+                attr, epg_dn, tDn, dn, domdef_dynamic_map, deployed_map
+            )
+
+            if selected_vlan:
+                vlan_num = selected_vlan.split("vlan-", 1)[1] if selected_vlan.startswith("vlan-") else selected_vlan
+                if binding_type == "static":
+                    epg_label = f"{epg_label} ({vlan_num}[s])"
+                else:
+                    epg_label = f"{epg_label} ({vlan_num})"
+            else:
+                epg_label = f"{epg_label} (none)"
+
+            provider_node = tree.setdefault(provider, {})
+            domain_node = provider_node.setdefault(domain, {})
+            tenant_node = domain_node.setdefault(tenant, [])
+            if epg_label not in tenant_node:
+                tenant_node.append(epg_label)
+                total += 1
+
+        if not tree:
+            print("No EPG to VMM domain associations found.")
+            return
+
+        # Ensure deterministic output
+        sorted_tree = {
+            provider: {
+                domain: {
+                    tenant: sorted(epgs)
+                    for tenant, epgs in sorted(tenants.items())
+                }
+                for domain, tenants in sorted(domains.items())
+            }
+            for provider, domains in sorted(tree.items())
+        }
+
+        self.print_tree({"VMM Domain EPG Associations": sorted_tree})
+        print(f"\nTotal: {total} associated EPG(s)")
+
+    @staticmethod
+    def _vlan_encap_sort_key(encap: str):
+        """Sort vlan-N values numerically; keep non-vlan values at the end."""
+        m = re.match(r"^vlan-(\d+)$", encap or "")
+        if m:
+            return (0, int(m.group(1)), encap)
+        return (1, 0, encap or "")
+
+    @staticmethod
+    def _extract_vlan_encaps_from_attrs(attrs: Dict[str, Any]) -> Set[str]:
+        """Extract all vlan-N tokens from encap-related attribute fields."""
+        vlans: Set[str] = set()
+        for key, value in attrs.items():
+            if "encap" not in key.lower():
+                continue
+            if not isinstance(value, str) or not value:
+                continue
+            for match in re.findall(r"vlan-\d+", value):
+                vlans.add(match)
+        return vlans
+
+    @staticmethod
+    def _extract_primary_vlan_encaps_from_attrs(attrs: Dict[str, Any]) -> Set[str]:
+        """Extract vlan-N tokens from primary/secondary encap-related fields only."""
+        vlans: Set[str] = set()
+        for key, value in attrs.items():
+            key_lower = key.lower()
+            if "encap" not in key_lower:
+                continue
+            if "primary" not in key_lower and "secondary" not in key_lower:
+                continue
+            if not isinstance(value, str) or not value:
+                continue
+            for match in re.findall(r"vlan-\d+", value):
+                vlans.add(match)
+        return vlans
+
+    def _build_epg_member_vlans_map(self):
+        """Build map of EPG DN -> set of learned member encaps (from fvCEp)."""
+        epg_member_vlans = {}
+        for cep_item in self.query_api("/api/node/class/fvCEp.json"):
+            cep_attr = cep_item.get("fvCEp", {}).get("attributes", {})
+            cep_dn = cep_attr.get("dn", "")
+            cep_encap = cep_attr.get("encap", "")
+
+            if not cep_encap or cep_encap in ("unspecified", "unknown"):
+                continue
+
+            cep_epg = parse_regex(RE_EPG, cep_dn)
+            if not cep_epg:
+                continue
+
+            epg_dn = f"uni/tn-{cep_epg['tenant']}/ap-{cep_epg['ap']}/epg-{cep_epg['epg']}"
+            epg_member_vlans.setdefault(epg_dn, set()).add(cep_encap)
+
+        return epg_member_vlans
+
+    def _build_epg_domain_domdef_vlans_map(self):
+        """Build map of (EPG DN, VMM domain DN) -> VLANs from fvDomDef only."""
+        result = {}
+
+        for domdef_item in self.query_api("/api/node/class/fvDomDef.json"):
+            attr = domdef_item.get("fvDomDef", {}).get("attributes", {})
+            dn = attr.get("dn", "")
+            encap = attr.get("encap", "")
+
+            if not encap or encap in ("unspecified", "unknown"):
+                continue
+
+            epg_info = parse_regex(RE_EPG, dn)
+            if not epg_info:
+                continue
+
+            domdef_match = re.search(r"/rsdomDef-\[([^\]]+)\]", dn)
+            if not domdef_match:
+                continue
+
+            domain_dn = domdef_match.group(1)
+            if "/vmmp-" not in domain_dn or "/dom-" not in domain_dn:
+                continue
+
+            epg_dn = f"uni/tn-{epg_info['tenant']}/ap-{epg_info['ap']}/epg-{epg_info['epg']}"
+            result.setdefault((epg_dn, domain_dn), set()).add(encap)
+
+        return result
+
+    def _build_vmm_deployed_epg_vlans_map(self):
+        """Build map of (EPG DN, VMM domain DN) -> deployed VLANs from vmmEpPD."""
+        result = {}
+
+        for item in self.query_api("/api/node/class/vmmEpPD.json"):
+            attr = item.get("vmmEpPD", {}).get("attributes", {})
+            dn = attr.get("dn", "")
+            encap = attr.get("encap", "")
+
+            if not encap or encap in ("unspecified", "unknown"):
+                continue
+
+            provider_match = re.search(r"/vmmp-([^/]+)/dom-([^/]+)", dn)
+            epg_match = re.search(r"/eppd-\[(uni/tn-[^\]]+/ap-[^\]]+/epg-[^\]]+)\]", dn)
+            if not provider_match or not epg_match:
+                continue
+
+            provider = provider_match.group(1)
+            domain = provider_match.group(2)
+            domain_dn = f"uni/vmmp-{provider}/dom-{domain}"
+            epg_dn = epg_match.group(1)
+
+            result.setdefault((epg_dn, domain_dn), set()).add(encap)
+
+        return result
+
+    def _get_attachment_domdef_vlans(self, rsdomatt_dn: str) -> Set[str]:
+        """Return dynamic VLANs from fvDomDef under one rsDomAtt attachment."""
+        vlans: Set[str] = set()
+        if not rsdomatt_dn:
+            return vlans
+
+        data = self.query_api(
+            f"/api/mo/{rsdomatt_dn}.json?query-target=subtree&target-subtree-class=fvDomDef"
+        )
+        for item in data:
+            attr = item.get("fvDomDef", {}).get("attributes", {})
+            encap = attr.get("encap", "")
+            if encap and encap not in ("unspecified", "unknown"):
+                vlans.add(encap)
+
+        return vlans
+
+    def _resolve_vmm_attachment_vlan(self, attr: Dict[str, Any], epg_dn: str, domain_dn: str, rsdomatt_dn: str,
+                                     domdef_dynamic_map: Dict[Tuple[str, str], Set[str]],
+                                     deployed_map: Dict[Tuple[str, str], Set[str]]) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve effective VLAN and type for one EPG<->VMM-domain association."""
+        static_vlans = self._extract_primary_vlan_encaps_from_attrs(attr)
+        all_encaps = self._extract_vlan_encaps_from_attrs(attr)
+        dynamic_vlans = set(domdef_dynamic_map.get((epg_dn, domain_dn), set()))
+
+        attr_lc = {
+            key.lower(): value
+            for key, value in attr.items()
+            if isinstance(value, str) and value and value not in ("unspecified", "unknown")
+        }
+        mode_hints = [
+            value.lower() for key, value in attr_lc.items()
+            if "mode" in key or "pref" in key
+        ]
+        mode_hint_keys = [
+            key for key in attr_lc.keys()
+            if "mode" in key or "pref" in key
+        ]
+        explicit_static_mode = any("static" in hint for hint in mode_hints) or any("static" in key for key in mode_hint_keys)
+        explicit_dynamic_mode = any("dynamic" in hint for hint in mode_hints) or any("dynamic" in key for key in mode_hint_keys)
+
+        # Direct encap on the EPG<->domain association is an explicit VLAN assignment.
+        # In VMM workflows this corresponds to the static allocation on the attachment.
+        direct_encap_vlans = set(re.findall(r"vlan-\d+", str(attr.get("encap", ""))))
+        if direct_encap_vlans:
+            static_vlans.update(direct_encap_vlans)
+
+        if not static_vlans and explicit_static_mode:
+            static_vlans.update(all_encaps)
+
+        dynamic_vlans.update(all_encaps - static_vlans)
+        deployed_vlans = set(deployed_map.get((epg_dn, domain_dn), set()))
+
+        if deployed_vlans and not static_vlans:
+            dynamic_vlans.update(deployed_vlans)
+        if not dynamic_vlans:
+            dynamic_vlans.update(self._get_attachment_domdef_vlans(rsdomatt_dn))
+
+        selected_vlan = None
+        selected_type = None
+
+        # Respect explicit VLAN mode: if the binding mode says static, tag as static.
+        if explicit_static_mode:
+            if static_vlans:
+                selected_vlan = sorted(static_vlans, key=self._vlan_encap_sort_key)[0]
+            elif all_encaps:
+                selected_vlan = sorted(all_encaps, key=self._vlan_encap_sort_key)[0]
+            elif deployed_vlans:
+                selected_vlan = sorted(deployed_vlans, key=self._vlan_encap_sort_key)[0]
+            selected_type = "static" if selected_vlan else None
+        elif static_vlans:
+            selected_vlan = sorted(static_vlans, key=self._vlan_encap_sort_key)[0]
+            selected_type = "static"
+        elif deployed_vlans:
+            selected_vlan = sorted(deployed_vlans, key=self._vlan_encap_sort_key)[0]
+            selected_type = "dynamic"
+        elif dynamic_vlans:
+            selected_vlan = sorted(dynamic_vlans, key=self._vlan_encap_sort_key)[0]
+            selected_type = "dynamic"
+        elif explicit_dynamic_mode and all_encaps:
+            selected_vlan = sorted(all_encaps, key=self._vlan_encap_sort_key)[0]
+            selected_type = "dynamic"
+
+        return selected_vlan, selected_type
+
+    def handle_vmm_vlan_command(self, mode: str = "all", domain_filter: Optional[str] = None):
+        """List VLANs in order for EPGs attached to the selected VMM domain."""
+        mode = (mode or "all").lower()
+        filter_label = f" for domain '{domain_filter}'" if domain_filter else ""
+
+        if mode == "static":
+            print(f"Listing static VLANs used by VMM EPGs{filter_label}:\n")
+        elif mode == "dynamic":
+            print(f"Listing dynamic VLANs used by VMM EPGs{filter_label}:\n")
+        else:
+            print(f"Listing VLANs used by VMM EPGs{filter_label}:\n")
+
+        domdef_dynamic_map = self._build_epg_domain_domdef_vlans_map()
+        deployed_map = self._build_vmm_deployed_epg_vlans_map()
+        vlan_to_epgs: Dict[str, List[str]] = {}
+
+        for item in self.query_api("/api/node/class/fvRsDomAtt.json"):
+            attr = item.get("fvRsDomAtt", {}).get("attributes", {})
+            dn = attr.get("dn", "")
+            tDn = attr.get("tDn", "")
+
+            if "/vmmp-" not in tDn or "/dom-" not in tDn:
+                continue
+
+            provider_match = re.search(r"/vmmp-([^/]+)/", tDn)
+            domain_match = re.search(r"/dom-([^/]+)", tDn)
+            if not provider_match or not domain_match:
+                continue
+
+            provider = provider_match.group(1)
+            domain = domain_match.group(1)
+            if domain_filter:
+                filt = domain_filter.strip().lower()
+                if filt not in (domain.lower(), f"{provider.lower()}/{domain.lower()}"):
+                    continue
+
+            epg_info = parse_regex(RE_EPG, dn)
+            if not epg_info:
+                continue
+
+            epg_dn = f"uni/tn-{epg_info['tenant']}/ap-{epg_info['ap']}/epg-{epg_info['epg']}"
+            epg_label = f"{epg_info['tenant']}/{epg_info['ap']}/{epg_info['epg']}"
+
+            selected_vlan, selected_type = self._resolve_vmm_attachment_vlan(
+                attr, epg_dn, tDn, dn, domdef_dynamic_map, deployed_map
+            )
+
+            if not selected_vlan:
+                continue
+
+            if mode == "static" and selected_type != "static":
+                continue
+            if mode == "dynamic" and selected_type != "dynamic":
+                continue
+
+            suffix = "[s]" if selected_type == "static" and mode == "all" else ""
+            vlan_to_epgs.setdefault(selected_vlan, []).append(f"{epg_label}{suffix}")
+
+        if not vlan_to_epgs:
+            if mode == "static":
+                print("No static VLAN bindings found for VMM-associated EPGs.")
+            elif mode == "dynamic":
+                print("No dynamic VLAN bindings found for VMM-associated EPGs.")
+            else:
+                print("No VLANs found for VMM-associated EPGs.")
+            return
+
+        sorted_vlans = sorted(vlan_to_epgs.keys(), key=self._vlan_encap_sort_key)
+        total_refs = 0
+        for vlan in sorted_vlans:
+            vlan_num = vlan.split("vlan-", 1)[1] if vlan.startswith("vlan-") else vlan
+            epgs = sorted(set(vlan_to_epgs[vlan]))
+            total_refs += len(epgs)
+            print(f"{vlan_num} | {', '.join(epgs)}")
+
+        print(f"Total: {len(sorted_vlans)} VLAN(s), {total_refs} mapping(s)")
+
     def handle_aaep_list_command(self):
         """List all Attachable Access Entity Profiles."""
         print("Listing all Attachable Access Entity Profiles (AAEPs):\n")
@@ -3018,6 +3418,25 @@ def main():
         apic.handle_subnet_command(args.tenant, args.prefix, args.filter)
     elif args.command == "aaep":
         apic.handle_aaep_command(args.name, args.list_endpoints)
+    elif args.command == "vmm":
+        domain = getattr(args, "domain", None)
+        action = getattr(args, "vmm_action", None)
+        vlan_mode = getattr(args, "vmm_vlan_cmd", None)
+
+        if domain == "vlan":
+            print("Error: Please specify a VMM domain first. Example: saci vmm <domain> vlan [static|dynamic]")
+            return
+
+        if action == "vlan":
+            if not domain:
+                print("Error: Please specify a VMM domain first. Example: saci vmm <domain> vlan [static|dynamic]")
+                return
+            apic.handle_vmm_vlan_command((vlan_mode or "all"), domain)
+        else:
+            if domain:
+                apic.handle_vmm_epg_command(domain)
+            else:
+                apic.handle_vmm_command()
     elif args.command == "route":
         apic.handle_route_command(args.vrf, args.detail, args.filter, args.prefix, args.local, args.external)
 
