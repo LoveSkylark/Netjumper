@@ -77,6 +77,8 @@ def parse_args():
     vpc_parser = subparsers.add_parser("vpc", help="Search by VPC interface")
     vpc_parser.add_argument("nodes", help="VPC node pair (e.g., 221-222)")
     vpc_parser.add_argument("interface", help="VPC interface name (e.g., VPC-CUST-A01)", nargs="?", default=None)
+    vpc_parser.add_argument("vpc_action", nargs="?", choices=["vlan"], default=None,
+                            help="Show VLAN table for the specified VPC interface")
 
     clean_parser = subparsers.add_parser("clean", help="Show unused VRFs or BDs")
     clean_sub = clean_parser.add_subparsers(dest="clean_cmd", required=True)
@@ -121,6 +123,7 @@ def parse_args():
     vmm_parser.add_argument("domain", nargs="?", default=None, help="VMM domain name or provider/domain (e.g., vCloud or VMware/vCloud)")
     vmm_parser.add_argument("vmm_action", nargs="?", choices=["vlan"], default=None, help="Show VLAN table for the specified domain")
     vmm_parser.add_argument("vmm_vlan_cmd", nargs="?", choices=["static", "dynamic"], default=None, help="Limit VLAN table to static or dynamic entries")
+    vmm_parser.add_argument("-t", "--tenant", help="Filter by tenant name", default=None)
 
     route_parser = subparsers.add_parser("route", help="Show consolidated routing table for a VRF across all leaf nodes")
     route_parser.add_argument("vrf", help="VRF to look up in <tenant>:<vrf> format (e.g., myTenant:myVRF)")
@@ -2141,9 +2144,14 @@ class ACIClient:
         else:
             print(f"\nNo bindings found for {port_str} on {device}.")
 
-    def handle_vpc_command(self, nodes: str, interface: Optional[str] = None):
-        """Search for bindings on a VPC interface."""
+    def handle_vpc_command(self, nodes: str, interface: Optional[str] = None, action: Optional[str] = None):
+        """Search for bindings on a VPC interface, or show VLAN table when action is 'vlan'."""
         tree = {}
+        vlan_to_bindings: Dict[str, Set[str]] = {}
+
+        if interface == "vlan" and action is None:
+            print("Error: Please specify a VPC interface first. Example: saci vpc <nodes> <interface> vlan")
+            return
 
         # Parse node pair
         try:
@@ -2167,6 +2175,10 @@ class ACIClient:
 
         # If no interface specified, list all VPCs
         if not interface:
+            if action == "vlan":
+                print("Error: Please specify a VPC interface first. Example: saci vpc <nodes> <interface> vlan")
+                return
+
             all_bindings = self.query_api("/api/node/class/fvRsPathAtt.json")
             vpc_list = set()
             vpc_prefix = f"topology/pod-{pod_id}/protpaths-{node1}-{node2}/pathep-["
@@ -2201,13 +2213,18 @@ class ACIClient:
 
             binding = parse_epg_binding(dn, encap)
             if binding:
-                category = f"EPG: {binding.app_profile}"
-                self.tree_add(
-                    tree,
-                    binding.tenant,
-                    category,
-                    label=f"{binding.epg} ({binding.encap})"
-                )
+                if action == "vlan":
+                    if re.match(r"^vlan-\d+$", binding.encap or ""):
+                        epg_ref = f"{binding.tenant}/{binding.app_profile}/{binding.epg} [EPG]"
+                        vlan_to_bindings.setdefault(binding.encap, set()).add(epg_ref)
+                else:
+                    category = f"EPG: {binding.app_profile}"
+                    self.tree_add(
+                        tree,
+                        binding.tenant,
+                        category,
+                        label=f"{binding.epg} ({binding.encap})"
+                    )
 
         # L3 (SVI / L3Out) Bindings
         svi_bindings = self.query_api("/api/class/l3extRsPathL3OutAtt.json")
@@ -2222,16 +2239,36 @@ class ACIClient:
 
             binding = parse_l3out_binding(dn, encap)
             if binding:
-                category = f"L3: {binding.l3out}"
-                self.tree_add(tree, binding.tenant, category, label=f"{binding.interface} ({binding.encap})")
+                if action == "vlan":
+                    if re.match(r"^vlan-\d+$", binding.encap or ""):
+                        l3_ref = f"{binding.tenant}/{binding.l3out}/{binding.interface} [L3]"
+                        vlan_to_bindings.setdefault(binding.encap, set()).add(l3_ref)
+                else:
+                    category = f"L3: {binding.l3out}"
+                    self.tree_add(tree, binding.tenant, category, label=f"{binding.interface} ({binding.encap})")
 
         # Print Results
         device = self.normalize_node_label(pod_id, nodes)
+        if action == "vlan":
+            if vlan_to_bindings:
+                print(f"\nVLANs for VPC {interface} on {device}:")
+                sorted_vlans = sorted(vlan_to_bindings.keys(), key=self._vlan_encap_sort_key)
+                total_refs = 0
+                for vlan in sorted_vlans:
+                    vlan_num = vlan.split("vlan-", 1)[1] if vlan.startswith("vlan-") else vlan
+                    refs = sorted(vlan_to_bindings[vlan])
+                    total_refs += len(refs)
+                    print(f"{vlan_num} | {', '.join(refs)}")
+                print(f"Total: {len(sorted_vlans)} VLAN(s), {total_refs} mapping(s)")
+            else:
+                print(f"\nNo VLAN bindings found for VPC {interface} on {device}.")
+            return
+
         if tree:
-            print(f"\nBindings for VPC {interface} on {device[0]}:")
+            print(f"\nBindings for VPC {interface} on {device}:")
             self.print_tree(tree)
         else:
-            print(f"\nNo bindings found for VPC {interface} on {device[0]}.")
+            print(f"\nNo bindings found for VPC {interface} on {device}.")
 
     def handle_vlan_command(self, vlan_id: int):
         """Search for VLAN usage in EPGs, L3Outs, and VLAN pools."""
@@ -2459,9 +2496,11 @@ class ACIClient:
         self.print_tree({"VMM Domains": sorted_tree})
         print(f"\nTotal: {total} VMM domain(s)")
 
-    def handle_vmm_epg_command(self, domain_filter: Optional[str] = None):
+    def handle_vmm_epg_command(self, domain_filter: Optional[str] = None, tenant_filter: Optional[str] = None):
         """List EPGs associated with VMM domains and their explicit VLAN assignment."""
         filter_label = f" for domain '{domain_filter}'" if domain_filter else ""
+        if tenant_filter:
+            filter_label += f" in tenant '{tenant_filter}'" if filter_label else f" for tenant '{tenant_filter}'"
         print(f"Listing all EPGs associated with VMM domains{filter_label}:\n")
 
         domdef_dynamic_map = self._build_epg_domain_domdef_vlans_map()
@@ -2497,6 +2536,9 @@ class ACIClient:
                     continue
 
             tenant = epg_info["tenant"]
+            if tenant_filter:
+                if tenant.lower() != tenant_filter.strip().lower():
+                    continue
             epg_label = format_epg_label(dn)
             if epg_label.startswith("EPG: "):
                 epg_label = epg_label[5:]
@@ -2738,10 +2780,12 @@ class ACIClient:
 
         return selected_vlan, selected_type
 
-    def handle_vmm_vlan_command(self, mode: str = "all", domain_filter: Optional[str] = None):
+    def handle_vmm_vlan_command(self, mode: str = "all", domain_filter: Optional[str] = None, tenant_filter: Optional[str] = None):
         """List VLANs in order for EPGs attached to the selected VMM domain."""
         mode = (mode or "all").lower()
         filter_label = f" for domain '{domain_filter}'" if domain_filter else ""
+        if tenant_filter:
+            filter_label += f" in tenant '{tenant_filter}'" if filter_label else f" for tenant '{tenant_filter}'"
 
         if mode == "static":
             print(f"Listing static VLANs used by VMM EPGs{filter_label}:\n")
@@ -2777,6 +2821,10 @@ class ACIClient:
             epg_info = parse_regex(RE_EPG, dn)
             if not epg_info:
                 continue
+
+            if tenant_filter:
+                if epg_info["tenant"].lower() != tenant_filter.strip().lower():
+                    continue
 
             epg_dn = f"uni/tn-{epg_info['tenant']}/ap-{epg_info['ap']}/epg-{epg_info['epg']}"
             epg_label = f"{epg_info['tenant']}/{epg_info['ap']}/{epg_info['epg']}"
@@ -3403,7 +3451,7 @@ def main():
     elif args.command == "port":
         apic.handle_port_command(args.port, args.id, args.name)
     elif args.command == "vpc":
-        apic.handle_vpc_command(args.nodes, args.interface)
+        apic.handle_vpc_command(args.nodes, args.interface, getattr(args, "vpc_action", None))
     elif args.command == "vlan":
         apic.handle_vlan_command(int(args.vlan))
     elif args.command == "tenant":
@@ -3422,6 +3470,7 @@ def main():
         domain = getattr(args, "domain", None)
         action = getattr(args, "vmm_action", None)
         vlan_mode = getattr(args, "vmm_vlan_cmd", None)
+        tenant = getattr(args, "tenant", None)
 
         if domain == "vlan":
             print("Error: Please specify a VMM domain first. Example: saci vmm <domain> vlan [static|dynamic]")
@@ -3431,10 +3480,10 @@ def main():
             if not domain:
                 print("Error: Please specify a VMM domain first. Example: saci vmm <domain> vlan [static|dynamic]")
                 return
-            apic.handle_vmm_vlan_command((vlan_mode or "all"), domain)
+            apic.handle_vmm_vlan_command((vlan_mode or "all"), domain, tenant)
         else:
             if domain:
-                apic.handle_vmm_epg_command(domain)
+                apic.handle_vmm_epg_command(domain, tenant)
             else:
                 apic.handle_vmm_command()
     elif args.command == "route":
