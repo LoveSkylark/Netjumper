@@ -91,6 +91,8 @@ def parse_args():
     clean_sub.add_parser("bd",  help="List BDs with no EPG or L3Out attached")
     clean_bd_gw_parser = clean_sub.add_parser("bd-gw", help="List BDs with a subnet configured but unicast routing disabled")
     clean_bd_gw_parser.add_argument("-t", "--tenant", default=None, help="Limit to a single tenant")
+    clean_gw_conflict_parser = clean_sub.add_parser("gw-conflict", help="List subnets acting as default gateway in both a BD and an EPG (missing 'No Default SVI Gateway' flag on the EPG subnet)")
+    clean_gw_conflict_parser.add_argument("-t", "--tenant", default=None, help="Limit to a single tenant")
     clean_sub.add_parser("epg", help="List EPGs without contracts, members, or static bindings")
     clean_sub.add_parser("empty", help="List EPGs with no MAC, IP addresses, or static bindings")
     clean_sub.add_parser("contract", help="List contracts with no provider/consumer or only one side assigned")
@@ -867,6 +869,70 @@ class ACIClient:
         else:
             print("No issues found — all BDs with subnets have unicast routing enabled.")
 
+    def handle_clean_bd_epg_gw(self, tenant_filter: Optional[str] = None):
+        """List subnets where both the parent BD and an EPG act as default gateway for the same prefix.
+        The EPG subnet should carry ctrl=no-default-gateway when used only for route-leaking/pcTag binding."""
+        scope = f" in tenant '{tenant_filter}'" if tenant_filter else ""
+        print(f"Checking for BD/EPG gateway subnet conflicts{scope}...\n")
+
+        all_subnets = self.query_api("/api/node/class/fvSubnet.json")
+
+        bd_gateways: Dict[Tuple[str, str], Set[str]] = {}    # (tenant, bd) -> {ip, ...}
+        epg_gateways: Dict[Tuple[str, str, str], Set[str]] = {}  # (tenant, ap, epg) -> {ip, ...}
+
+        for item in all_subnets:
+            attr = item.get("fvSubnet", {}).get("attributes", {})
+            dn   = attr.get("dn", "")
+            ip   = attr.get("ip", "")
+            ctrl = attr.get("ctrl", "")
+
+            if not ip or ip in EXCLUDED_CIDRS:
+                continue
+            if "no-default-gateway" in ctrl:
+                continue  # correctly flagged — not a conflict candidate
+
+            bd_m = parse_regex(RE_BD, dn)
+            if bd_m:
+                if tenant_filter and bd_m["tenant"] != tenant_filter:
+                    continue
+                bd_gateways.setdefault((bd_m["tenant"], bd_m["bd"]), set()).add(ip)
+                continue
+
+            epg_m = parse_regex(RE_EPG, dn)
+            if epg_m:
+                if tenant_filter and epg_m["tenant"] != tenant_filter:
+                    continue
+                epg_gateways.setdefault((epg_m["tenant"], epg_m["ap"], epg_m["epg"]), set()).add(ip)
+
+        if not epg_gateways:
+            print("No EPG gateway subnets found.")
+            return
+
+        # Map each EPG to its BD
+        epg_bd_map: Dict[Tuple[str, str, str], str] = {}
+        for item in self.query_api("/api/node/class/fvRsBd.json"):
+            attr    = item.get("fvRsBd", {}).get("attributes", {})
+            dn      = attr.get("dn", "")
+            bd_name = attr.get("tnFvBDName", "")
+            epg_m   = parse_regex(RE_EPG, dn)
+            if epg_m and bd_name:
+                epg_bd_map[(epg_m["tenant"], epg_m["ap"], epg_m["epg"])] = bd_name
+
+        issues: Dict[str, Any] = {}
+        for (tenant, ap, epg), epg_ips in epg_gateways.items():
+            bd_name  = epg_bd_map.get((tenant, ap, epg))
+            if not bd_name:
+                continue
+            bd_ips   = bd_gateways.get((tenant, bd_name), set())
+            conflicts = epg_ips & bd_ips
+            for ip in sorted(conflicts):
+                issues.setdefault(tenant, {}).setdefault(f"BD: {bd_name}", {}).setdefault(f"EPG: {ap}/{epg}", []).append(ip)
+
+        if issues:
+            self.print_tree(issues, label="Subnets acting as default gateway in both BD and EPG:")
+        else:
+            print("No BD/EPG gateway conflicts found.")
+
     def handle_clean_epg(self):
         """List EPGs without contracts, members, or static bindings."""
         print("Checking EPGs without any contract, members, or static bindings...\n")
@@ -1250,6 +1316,7 @@ class ACIClient:
             "vrf": self.handle_clean_vrf,
             "bd": self.handle_clean_bd,
             "bd-gw": lambda: self.handle_clean_bd_gw(tenant_filter),
+            "gw-conflict": lambda: self.handle_clean_bd_epg_gw(tenant_filter),
             "epg": self.handle_clean_epg,
             "empty": self.handle_clean_empty,
             "aaep": self.handle_clean_aaep,
