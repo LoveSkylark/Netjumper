@@ -83,7 +83,7 @@ def parse_args():
     clean_parser = subparsers.add_parser("clean", help="Show unused VRFs or BDs")
     clean_sub = clean_parser.add_subparsers(dest="clean_cmd", required=True)
     clean_sub.add_parser("aaep", help="List AAEPs not assigned to any interface or static path")
-    clean_sub.add_parser("domain", help="List Physical, VMM, L3Out and FC domains not attached to any AAEP")
+    clean_sub.add_parser("domain", help="List domains without an AAEP and physical domain attachments on EPGs without path bindings")
     clean_static_parser = clean_sub.add_parser("static", help="List static path bindings referencing nodes no longer in the fabric")
     clean_static_parser.add_argument("-t", "--tenant", default=None, help="Limit to a single tenant")
     clean_sub.add_parser("vlan", help="List VLAN pools not used by any Domain or AAEP")
@@ -1030,7 +1030,7 @@ class ACIClient:
             print("All AAEPs are assigned somewhere.")
 
     def handle_clean_domain(self):
-        """List Physical, VMM, L3Out and FC domains not attached to any AAEP."""
+        """List domains without AAEPs and physical attachments on EPGs without paths."""
         print("Checking domains not attached to any AAEP...\n")
 
         # Collect all domains by type
@@ -1075,6 +1075,44 @@ class ACIClient:
             self.print_tree(tree, label="Domains not attached to any AAEP:")
         else:
             print("All domains are attached to an AAEP.")
+
+        epgs_with_paths = set()
+        for path_class in ("fvRsPathAtt", "fvDyPathAtt"):
+            for item in self.query_api(f"/api/node/class/{path_class}.json"):
+                attr = item.get(path_class, {}).get("attributes", {})
+                relation = "/rspathAtt-" if path_class == "fvRsPathAtt" else "/dyPathAtt-"
+                dn = attr.get("dn", "")
+                if relation in dn and attr.get("tDn"):
+                    epgs_with_paths.add(dn.split(relation, 1)[0])
+
+        disconnected = {}
+        for item in self.query_api("/api/node/class/fvRsDomAtt.json"):
+            attr = item.get("fvRsDomAtt", {}).get("attributes", {})
+            domain_dn = attr.get("tDn", "")
+            if not domain_dn.startswith("uni/phys-"):
+                continue
+            dn = attr.get("dn", "")
+            if "/rsdomAtt-" not in dn:
+                continue
+            epg_dn = dn.split("/rsdomAtt-", 1)[0]
+            if epg_dn in epgs_with_paths:
+                continue
+            epg_info = parse_regex(RE_EPG, epg_dn)
+            if not epg_info:
+                continue
+            domains = disconnected.setdefault(epg_info["tenant"], {}).setdefault(
+                f"AP: {epg_info['ap']}", {}
+            ).setdefault(f"EPG: {epg_info['epg']}", [])
+            domain_label = f"Physical Domain: {domain_dn[len('uni/phys-'):]}"
+            if domain_label not in domains:
+                domains.append(domain_label)
+                domains.sort()
+
+        print()
+        if disconnected:
+            self.print_tree(disconnected, label="Physical domain attachments on EPGs with no static or dynamic path bindings:")
+        else:
+            print("No physical domain attachments on EPGs without static or dynamic path bindings found.")
 
     def handle_clean_static(self, tenant_filter: Optional[str] = None):
         """List static path bindings that reference a node no longer present in the fabric."""

@@ -71,6 +71,21 @@ slnms nb diff
 saci vlan 120
 ```
 
+### ACI Domain Cleanup
+
+```bash
+saci clean domain
+```
+
+Reports domains without an AAEP, followed by physical domain attachments on EPGs
+with no static or dynamic path bindings. Attachments are grouped by tenant,
+application profile, and EPG, including domains already assigned to an AAEP.
+
+The EPG check uses configured/deployed path bindings, not cable or link state.
+An EPG with any path binding is excluded; it does not identify an unused domain
+on an otherwise connected EPG. VMM attachments are excluded from this check.
+The command only reports findings and does not remove configuration.
+
 ## slnms Command Coverage
 
 - `billing`
