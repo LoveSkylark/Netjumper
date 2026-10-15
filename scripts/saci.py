@@ -83,7 +83,7 @@ def parse_args():
     clean_parser = subparsers.add_parser("clean", help="Show unused VRFs or BDs")
     clean_sub = clean_parser.add_subparsers(dest="clean_cmd", required=True)
     clean_sub.add_parser("aaep", help="List AAEPs not assigned to any interface or static path")
-    clean_sub.add_parser("domain", help="List domains without an AAEP and physical domain attachments on EPGs without path bindings")
+    clean_sub.add_parser("domain", help="List domains without an existing AAEP and physical attachments without an AAEP or paths to existing fabric nodes")
     clean_static_parser = clean_sub.add_parser("static", help="List static path bindings referencing nodes no longer in the fabric")
     clean_static_parser.add_argument("-t", "--tenant", default=None, help="Limit to a single tenant")
     clean_sub.add_parser("vlan", help="List VLAN pools not used by any Domain or AAEP")
@@ -1030,7 +1030,7 @@ class ACIClient:
             print("All AAEPs are assigned somewhere.")
 
     def handle_clean_domain(self):
-        """List domains without AAEPs and physical attachments on EPGs without paths."""
+        """List orphaned domains and physical attachments without current fabric paths."""
         print("Checking domains not attached to any AAEP...\n")
 
         # Collect all domains by type
@@ -1057,11 +1057,17 @@ class ACIClient:
             print("No domains found.")
             return
 
-        # Collect domain DNs referenced by any AAEP via infraRsDomP
+        aaep_dns = {
+            item.get("infraAttEntityP", {}).get("attributes", {}).get("dn", "")
+            for item in self.query_api("/api/node/class/infraAttEntityP.json")
+        } - {""}
+
         used_dns = set()
         for item in self.query_api("/api/node/class/infraRsDomP.json"):
-            tDn = item.get("infraRsDomP", {}).get("attributes", {}).get("tDn", "")
-            if tDn:
+            attr = item.get("infraRsDomP", {}).get("attributes", {})
+            tDn = attr.get("tDn", "")
+            aaep_dn = attr.get("dn", "").split("/rsdomP-", 1)[0]
+            if tDn and aaep_dn in aaep_dns and attr.get("state", "formed") == "formed":
                 used_dns.add(tDn)
 
         # Group unused domains by type
@@ -1076,6 +1082,16 @@ class ACIClient:
         else:
             print("All domains are attached to an AAEP.")
 
+        fabric_nodes = set()
+        for item in self.query_api("/api/node/class/fabricNode.json"):
+            attr = item.get("fabricNode", {}).get("attributes", {})
+            node_match = re.fullmatch(r"topology/pod-(\d+)/node-(\d+)", attr.get("dn", ""))
+            if node_match:
+                fabric_nodes.add(node_match.groups())
+
+        if not fabric_nodes:
+            print("\nFabric node inventory unavailable or empty; missing-node path checks skipped.")
+
         epgs_with_paths = set()
         for path_class in ("fvRsPathAtt", "fvDyPathAtt"):
             for item in self.query_api(f"/api/node/class/{path_class}.json"):
@@ -1083,6 +1099,13 @@ class ACIClient:
                 relation = "/rspathAtt-" if path_class == "fvRsPathAtt" else "/dyPathAtt-"
                 dn = attr.get("dn", "")
                 if relation in dn and attr.get("tDn"):
+                    path_match = re.match(
+                        r"topology/pod-(\d+)/(?:prot)?paths-(\d+(?:-\d+)?)/", attr["tDn"]
+                    )
+                    if fabric_nodes and path_match:
+                        pod, nodes = path_match.groups()
+                        if not any((pod, node) in fabric_nodes for node in nodes.split("-")):
+                            continue
                     epgs_with_paths.add(dn.split(relation, 1)[0])
 
         disconnected = {}
@@ -1095,7 +1118,11 @@ class ACIClient:
             if "/rsdomAtt-" not in dn:
                 continue
             epg_dn = dn.split("/rsdomAtt-", 1)[0]
-            if epg_dn in epgs_with_paths:
+            if domain_dn not in used_dns:
+                reason = "no existing AAEP attachment"
+            elif epg_dn not in epgs_with_paths:
+                reason = "no path to an existing fabric node" if fabric_nodes else "no static or dynamic path bindings"
+            else:
                 continue
             epg_info = parse_regex(RE_EPG, epg_dn)
             if not epg_info:
@@ -1103,16 +1130,16 @@ class ACIClient:
             domains = disconnected.setdefault(epg_info["tenant"], {}).setdefault(
                 f"AP: {epg_info['ap']}", {}
             ).setdefault(f"EPG: {epg_info['epg']}", [])
-            domain_label = f"Physical Domain: {domain_dn[len('uni/phys-'):]}"
+            domain_label = f"Physical Domain: {domain_dn[len('uni/phys-'):]} [{reason}]"
             if domain_label not in domains:
                 domains.append(domain_label)
                 domains.sort()
 
         print()
         if disconnected:
-            self.print_tree(disconnected, label="Physical domain attachments on EPGs with no static or dynamic path bindings:")
+            self.print_tree(disconnected, label="Physical domain attachments without an existing AAEP or current fabric paths:")
         else:
-            print("No physical domain attachments on EPGs without static or dynamic path bindings found.")
+            print("No physical domain attachments without an existing AAEP or current fabric paths found.")
 
     def handle_clean_static(self, tenant_filter: Optional[str] = None):
         """List static path bindings that reference a node no longer present in the fabric."""
