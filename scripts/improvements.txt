@@ -1,0 +1,17 @@
+slnms inventtory  needs to remove 
+log events like: 
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-spine1
+2026-10-19 21:34:35:INFO - device added to list: dc2-spine1
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-spine2
+2026-10-19 21:34:35:INFO - device added to list: dc2-spine2
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-leaf1
+2026-10-19 21:34:35:INFO - device added to list: dc2-leaf1
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-leaf2
+2026-10-19 21:34:35:INFO - device added to list: dc2-leaf2
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-leaf3
+2026-10-19 21:34:35:INFO - device added to list: dc2-leaf3
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-leaf4
+2026-10-19 21:34:35:INFO - device added to list: dc2-leaf4
+2026-10-19 21:34:35:WARNING - Unable to get serial number from dc2-leaf5
+2026-10-19 21:34:35:INFO - device added to list: dc2-leaf5
+

@@ -86,6 +86,38 @@ An EPG with any path binding is excluded; it does not identify an unused domain
 on an otherwise connected EPG. VMM attachments are excluded from this check.
 The command only reports findings and does not remove configuration.
 
+## Tests
+
+Run the SACI and LibreNMS unit tests from the repository root:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+The SACI suites cover client authentication and caching, cleanup reports, IP/subnet
+lookups, command reports, VMM VLAN resolution, and CLI parsing/dispatch. They use
+mocked APIC responses and temporary token files; no live fabric or credentials
+are required. Following the domain tests, the shared test loader compiles SACI
+definitions from the source AST to avoid HTTP dependencies and import-time log
+files. This does not test module import side effects or real HTTP integration.
+
+BD cleanup regressions cover same-name BDs in different tenants and explicit
+cross-tenant target references.
+
+Run only the LibreNMS suites:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_slnms_*.py' -v
+```
+
+These cover the LibreNMS client, parsers, billing/inventory/neighbor/firmware
+reports, Oxidized downloads, host synchronization, NetBox command workflows,
+server selection, and CLI parsing/dispatch. API calls, DNS, hosts-file operations,
+configuration changes, and NetBox dependencies are mocked; output files are
+written only to temporary directories. The CLI and client definitions are loaded
+from the source AST to avoid optional runtime dependencies. Real HTTP, NetBox
+normalization/matching, and third-party hosts-file integration are not covered.
+
 ## slnms Command Coverage
 
 - `billing`

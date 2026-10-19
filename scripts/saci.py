@@ -803,20 +803,21 @@ class ACIClient:
                 bd = parsed["bd"]
                 all_bds.setdefault(tenant, set()).add(bd)
 
-        for item in epg_bd:
-            attr = item["fvRsBd"]["attributes"]
-            bd_name = attr.get("tnFvBDName")
-            if bd_name:
-                used_bds.add(bd_name)
-
-        for item in l3_sub:
-            attr = item["l3extSubnet"]["attributes"]
-            bd_name = attr.get("tnFvBDName")
-            if bd_name:
-                used_bds.add(bd_name)
+        for references, class_name in ((epg_bd, "fvRsBd"), (l3_sub, "l3extSubnet")):
+            for item in references:
+                attr = item[class_name]["attributes"]
+                target = parse_regex(RE_BD, attr.get("tDn", ""))
+                if target:
+                    used_bds.add((target["tenant"], target["bd"]))
+                else:
+                    bd_name = attr.get("tnFvBDName")
+                    tenant = extract_tenant_from_dn(attr.get("dn", ""))
+                    if bd_name and tenant != "unknown":
+                        used_bds.add((tenant, bd_name))
 
         unused_bds = {
-            tenant: sorted(bd_set - used_bds) for tenant, bd_set in all_bds.items()
+            tenant: sorted(bd for bd in bd_set if (tenant, bd) not in used_bds)
+            for tenant, bd_set in all_bds.items()
         }
         unused_bds = {tenant: bds for tenant, bds in unused_bds.items() if bds}
 
