@@ -1,5 +1,9 @@
 """LibreNMS reports and filesystem outputs using temporary directories."""
 
+import contextlib
+import io
+import logging
+import logging.handlers
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -21,9 +25,30 @@ class CommandTests(SlnmsCommandTestCase):
             str(Path(self.settings.log_dir) / "test.log"), maxBytes=5 * 1024 * 1024, backupCount=10,
         )
         logger.StreamHandler.assert_called_once_with(self.namespace["sys"].stderr)
+        logger.StreamHandler.return_value.setLevel.assert_called_once_with(logger.ERROR)
         self.assertEqual(logger.basicConfig.call_args.kwargs["handlers"], [
             logger.handlers.RotatingFileHandler.return_value, logger.StreamHandler.return_value,
         ])
+
+    def test_logging_keeps_info_and_warnings_in_file_and_only_errors_on_stderr(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), patch.dict(self.namespace, {"logging": logging}), patch.object(logging, "basicConfig") as configure:
+            self.namespace["setup_logging"]("test.log", self.settings.log_dir)
+        handlers = configure.call_args.kwargs["handlers"]
+        logger = logging.Logger("slnms-test", level=configure.call_args.kwargs["level"])
+        for handler in handlers:
+            logger.addHandler(handler)
+        try:
+            logger.info("routine progress")
+            logger.warning("partial information")
+            logger.error("actual failure")
+        finally:
+            for handler in handlers:
+                handler.close()
+        self.assertEqual(stderr.getvalue(), "actual failure\n")
+        log_text = (Path(self.settings.log_dir) / "test.log").read_text()
+        for message in ("routine progress", "partial information", "actual failure"):
+            self.assertIn(message, log_text)
 
     def test_api_fetch_preserves_order_and_exits_on_api_or_unexpected_error(self):
         first, second = Mock(return_value=[1]), Mock(return_value=[2])
@@ -102,7 +127,7 @@ class CommandTests(SlnmsCommandTestCase):
         self.api.get_bill_ports.side_effect = self.namespace["APIError"]("unavailable")
         self.assertIn("could not fetch ports", self.output(self.namespace["_print_bill_ports"], 7, self.api, []))
 
-    def test_inventory_writes_filtered_csv_and_reports_missing_serial(self):
+    def test_inventory_writes_filtered_csv_with_empty_missing_serial_without_logs(self):
         self.args.vendor = "CISCO"
         self.api.list_devices.return_value = [
             device(), device(device_id=2, sysName="Router2", hostname="192.0.2.2", serial=None, version=None, hardware=None),
@@ -115,8 +140,22 @@ class CommandTests(SlnmsCommandTestCase):
             "Router1, 192.0.2.1, Cisco, Model A, 1.0, SERIAL1\n"
             "Router2, 192.0.2.2, Cisco, , , \n")
         self.assertIn("Router1  S:SERIAL1", output)
+        self.assertIn("Router2  S:\n", output)
         self.assertNotIn("Other", output)
-        self.namespace["logging"].warning.assert_called_once()
+        self.assertEqual(self.namespace["logging"].mock_calls, [])
+
+    def test_inventory_treats_absent_none_and_empty_serial_as_blank(self):
+        for serial in (None, "", "absent"):
+            with self.subTest(serial=serial):
+                entry = device(serial=serial)
+                if serial == "absent":
+                    entry.pop("serial")
+                self.api.list_devices.return_value = [entry]
+                output = self.run_command("cmd_inventory")
+                self.assertIn("Router1  S:\n", output)
+                self.assertTrue((Path(self.settings.info_dir) / "device-list.csv").read_text().endswith(
+                    "Router1, 192.0.2.1, Cisco, Model A, 1.0, \n"))
+                self.assertEqual(self.namespace["logging"].mock_calls, [])
 
     def test_empty_inventory_still_writes_csv_header(self):
         self.api.list_devices.return_value = []
@@ -169,6 +208,9 @@ class CommandTests(SlnmsCommandTestCase):
         self.assertEqual((directory / "fallback.txt").read_text(), "hostname fallback\n")
         self.assertEqual(sorted(path.name for path in directory.iterdir()), ["Router1.txt", "fallback.txt"])
         self.assertIn("saved 2/4 configs", output)
+        self.assertIn("Config missing for: missing", output)
+        self.assertIn("Config missing for: empty", output)
+        self.namespace["logging"].warning.assert_not_called()
 
     def test_firmware_command_writes_files_and_switches_tree_rendering(self):
         self.api.list_devices.return_value = [device(), device(hostname="192.0.2.2", version="2.0")]

@@ -47,7 +47,8 @@ class HostTests(SlnmsCommandTestCase):
             call([("router1", "192.0.2.1")], str(Path(self.settings.info_dir) / "hosts.list")),
         ])
         self.assertIn("1 hosts written", output)
-        self.namespace["logging"].warning.assert_called_once()
+        self.assertIn("Skipped 1 device(s) without a valid IPv4 address.", output)
+        self.namespace["logging"].warning.assert_not_called()
 
     def test_host_compare_reports_additions_changes_and_skipped_devices(self):
         self.api.list_devices.return_value = [

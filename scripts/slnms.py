@@ -47,6 +47,8 @@ from scripts.tree_utils import CLITreeBuilder
 
 def setup_logging(log_file: str, log_dir: str) -> None:
     os.makedirs(log_dir, exist_ok=True)
+    terminal_handler = logging.StreamHandler(sys.stderr)
+    terminal_handler.setLevel(logging.ERROR)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s:%(levelname)s - %(message)s',
@@ -57,7 +59,7 @@ def setup_logging(log_file: str, log_dir: str) -> None:
                 maxBytes=5 * 1024 * 1024,
                 backupCount=10,
             ),
-            logging.StreamHandler(sys.stderr),  # Also output to stderr for errors
+            terminal_handler,
         ],
     )
 
@@ -191,7 +193,7 @@ def cmd_inventory(args, api: Client):
     devices, = _api_fetch(api.list_devices)
 
     csv_path = os.path.join(output_dir, "device-list.csv")
-    print("\nDevices with a serial number:")
+    print("\nDevices:")
     with open(csv_path, "w") as f:
         f.write("NAME, IP, VENDOR, HARDWARE, VERSION, SERIAL\n")
         for device in devices:
@@ -199,12 +201,9 @@ def cmd_inventory(args, api: Client):
             vendor = get_vendor(device.get('icon', ''))
             if args.vendor and args.vendor.lower() != vendor.lower():
                 continue
-            if device['serial']:
-                print(f"  {short_name}  S:{device['serial']}")
-            else:
-                logging.warning(f"Unable to get serial number from {short_name}")
-            logging.info(f"device added to list: {short_name}")
-            f.write(f"{short_name}, {device['hostname']}, {vendor}, {device['hardware'] or ''}, {device['version'] or ''}, {device['serial'] or ''}\n")
+            serial = device.get('serial') or ''
+            print(f"  {short_name}  S:{serial}")
+            f.write(f"{short_name}, {device['hostname']}, {vendor}, {device['hardware'] or ''}, {device['version'] or ''}, {serial}\n")
 
     print(f"\nDone, detailed list saved to: {csv_path}\n")
 
@@ -284,7 +283,6 @@ def cmd_download(args, api: Client):
             saved += 1
         else:
             print(f"  Config missing for: {short_name}")
-            logging.warning(f"Unable to get config from {short_name} ({hostname})")
 
     print(f"\nDone, saved {saved}/{total} configs to: {output_dir}\n")
 
@@ -384,7 +382,7 @@ def _host_update(args, api: Client) -> None:
     logging.info(f"Written {len(entries)} entries to {hosts_list}")
 
     if skipped:
-        logging.warning(f"Skipped {skipped} device(s) without a valid IPv4 address")
+        print(f"Skipped {skipped} device(s) without a valid IPv4 address.")
 
     print(f"Done, {len(entries)} hosts written.")
 
