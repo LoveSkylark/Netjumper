@@ -162,22 +162,25 @@ class CommandTests(SlnmsCommandTestCase):
         self.api.get_chassis_serial = Mock(return_value="CHASSIS1; CHASSIS2")
         output = self.run_command("cmd_inventory")
         self.api.get_chassis_serial.assert_called_once_with(1)
-        self.assertIn("Router1  S:CHASSIS1; CHASSIS2", output)
+        self.assertIn("Router1  S:CHASSIS1; CHASSIS2 (chassis)\n", output)
         self.assertTrue((Path(self.settings.info_dir) / "device-list.csv").read_text().endswith(
-            "Router1, 192.0.2.1, Cisco, Model A, 1.0, CHASSIS1; CHASSIS2\n"))
+            "Router1, 192.0.2.1, Cisco, Model A, 1.0, CHASSIS1; CHASSIS2 (chassis)\n"))
         self.assertEqual(self.namespace["logging"].mock_calls, [])
 
     def test_inventory_keeps_existing_serial_and_skips_filtered_device_lookup(self):
         self.args.vendor = "Cisco"
         self.api.list_devices.return_value = [device(), device(device_id=2, serial=None, icon="juniper.svg")]
         self.api.get_chassis_serial = Mock(return_value="CHASSIS")
-        self.assertIn("S:SERIAL1", self.run_command("cmd_inventory"))
+        output = self.run_command("cmd_inventory")
+        self.assertIn("S:SERIAL1\n", output)
+        self.assertNotIn("(chassis)", output)
+        self.assertNotIn("(chassis)", (Path(self.settings.info_dir) / "device-list.csv").read_text())
         self.api.get_chassis_serial.assert_not_called()
 
     def test_inventory_looks_up_chassis_when_normal_serial_is_whitespace(self):
         self.api.list_devices.return_value = [device(serial=" ")]
         self.api.get_chassis_serial = Mock(return_value="CHASSIS")
-        self.assertIn("S:CHASSIS", self.run_command("cmd_inventory"))
+        self.assertIn("S:CHASSIS (chassis)\n", self.run_command("cmd_inventory"))
         self.api.get_chassis_serial.assert_called_once_with(1)
 
     def test_inventory_chassis_api_failure_remains_a_real_error(self):

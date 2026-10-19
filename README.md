@@ -73,8 +73,9 @@ saci vlan 120
 
 `slnms inventory` uses the device serial when available, otherwise it looks up
 chassis serials in LibreNMS hardware inventory. Distinct chassis serials for
-stacked devices are separated by semicolons. If neither source has a serial,
-the field remains blank in both terminal output and the CSV file.
+stacked devices are separated by semicolons. Fallback values are labeled
+`(chassis)` in both terminal output and the CSV file; device serials are not
+labeled. If neither source has a serial, the field remains blank.
 
 ### ACI Domain Cleanup
 
