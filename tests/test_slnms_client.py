@@ -129,6 +129,39 @@ class ClientTests(SlnmsTestCase):
         self.assertEqual(self.client.update_device_field("router1", {"location": "DC1"}), {"status": "ok"})
         self.client._patch.assert_called_once_with("/api/v0/devices/router1", {"location": "DC1"})
 
+    def test_chassis_serial_uses_flat_inventory_and_ignores_other_components(self):
+        self.client._get = Mock(return_value={"inventory": [
+            {"entPhysicalClass": "powerSupply", "entPhysicalSerialNum": "PSU-SERIAL"},
+            {"entPhysicalClass": "chassis", "entPhysicalSerialNum": "  CHASSIS-SERIAL  "},
+        ]})
+        self.assertEqual(self.client.get_chassis_serial(1), "CHASSIS-SERIAL")
+        self.client._get.assert_called_once_with("/api/v0/inventory/1/all")
+
+    def test_chassis_serial_combines_distinct_stack_members(self):
+        self.client._get = Mock(return_value={"inventory": [
+            {"entPhysicalClass": "chassis", "entPhysicalSerialNum": "STACK1"},
+            {"entPhysicalClass": "chassis", "entPhysicalSerialNum": "STACK1"},
+            {"entPhysicalClass": 3, "entPhysicalSerialNum": "STACK2"},
+            {"entPhysicalClass": "3", "entPhysicalSerialNum": "STACK3"},
+        ]})
+        self.assertEqual(self.client.get_chassis_serial(1), "STACK1; STACK2; STACK3")
+
+    def test_chassis_serial_returns_blank_when_no_chassis_serial_is_available(self):
+        for response in ({}, {"inventory": []}, {"inventory": None}, {"inventory": [
+            {"entPhysicalClass": "chassis", "entPhysicalSerialNum": None},
+            {"entPhysicalClass": "chassis", "entPhysicalSerialNum": " "},
+            {"entPhysicalClass": "chassis"},
+            {"entPhysicalClass": "module", "entPhysicalSerialNum": "MODULE-SERIAL"},
+        ]}):
+            with self.subTest(response=response):
+                self.client._get = Mock(return_value=response)
+                self.assertEqual(self.client.get_chassis_serial(1), "")
+
+    def test_chassis_serial_propagates_api_failures(self):
+        self.client._get = Mock(side_effect=self.namespace["APIError"]("denied"))
+        with self.assertRaisesRegex(self.namespace["APIError"], "denied"):
+            self.client.get_chassis_serial(1)
+
     def test_list_oxidized_only_returns_lists_and_handles_http_error(self):
         for response, expected in (([{"name": "router1"}], [{"name": "router1"}]), ({"status": "ok"}, [])):
             with self.subTest(response=response):

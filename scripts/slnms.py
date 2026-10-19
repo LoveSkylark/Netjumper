@@ -201,7 +201,9 @@ def cmd_inventory(args, api: Client):
             vendor = get_vendor(device.get('icon', ''))
             if args.vendor and args.vendor.lower() != vendor.lower():
                 continue
-            serial = device.get('serial') or ''
+            serial = (device.get('serial') or '').strip()
+            if not serial:
+                serial, = _api_fetch(lambda device_id=device['device_id']: api.get_chassis_serial(device_id))
             print(f"  {short_name}  S:{serial}")
             f.write(f"{short_name}, {device['hostname']}, {vendor}, {device['hardware'] or ''}, {device['version'] or ''}, {serial}\n")
 

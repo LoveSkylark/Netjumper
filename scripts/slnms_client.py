@@ -89,6 +89,18 @@ class Client:
     def get_device(self, hostname: str) -> dict:
         return self._get(f'/api/v0/devices/{hostname}')['devices'][0]
 
+    def get_chassis_serial(self, device_id: int) -> str:
+        """Return distinct chassis serials, including nested stack members."""
+        inventory = self._get(f'/api/v0/inventory/{device_id}/all').get('inventory') or []
+        serials = []
+        for component in inventory:
+            if str(component.get('entPhysicalClass', '')).lower() not in ('chassis', '3'):
+                continue
+            serial = (component.get('entPhysicalSerialNum') or '').strip()
+            if serial and serial not in serials:
+                serials.append(serial)
+        return '; '.join(serials)
+
     def add_device(self, payload: dict) -> list[dict]:
         return self._post('/api/v0/devices', payload)['devices']
 

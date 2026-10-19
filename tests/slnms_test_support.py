@@ -80,6 +80,7 @@ class SlnmsCommandTestCase(SlnmsTestCase):
         self.namespace["logging"] = Mock()
         self.namespace["socket"] = SimpleNamespace(gethostbyname=Mock(side_effect=OSError("DNS unavailable in tests")))
         self.api = Mock(spec=self.namespace["Client"])
+        self.api.get_chassis_serial.return_value = ""
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
